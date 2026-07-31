@@ -1,0 +1,662 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>打卡系統</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EAEEF2; --card:#FFFFFF; --ink:#161D26; --muted:#697585;
+    --line:#DBE1E8; --line-2:#EEF1F5;
+    --brand:#274B78; --brand-ink:#1B3557;
+    --in:#1C7A50; --in-soft:#E3F3EB;
+    --out:#B4400C; --out-soft:#FBEADF;
+    --amber:#E8A62B;
+    --shadow:0 1px 2px rgba(22,29,38,.06),0 8px 24px rgba(22,29,38,.06);
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'Inter','Noto Sans TC',system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--sans); background:var(--paper); color:var(--ink);
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+    padding:18px; max-width:960px; margin:0 auto;
+  }
+  a{color:var(--brand)}
+  h1{font-size:20px;margin:0;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px}
+
+  header.app{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .logo{
+    width:40px;height:40px;border-radius:11px;flex:none;
+    background:linear-gradient(150deg,var(--brand),var(--brand-ink));
+    display:grid;place-items:center;color:#fff;box-shadow:var(--shadow);
+  }
+  .logo svg{width:22px;height:22px}
+
+  nav.tabs{display:flex;gap:6px;background:var(--card);padding:6px;border-radius:14px;
+    box-shadow:var(--shadow);margin-bottom:18px;overflow-x:auto}
+  nav.tabs button{
+    flex:1;min-width:max-content;border:0;background:transparent;color:var(--muted);
+    font-family:inherit;font-size:14px;font-weight:600;padding:9px 12px;border-radius:9px;
+    cursor:pointer;white-space:nowrap;transition:.15s;
+  }
+  nav.tabs button.active{background:var(--brand);color:#fff}
+  nav.tabs button:not(.active):hover{background:var(--line-2);color:var(--ink)}
+
+  .card{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+  .card h2 .tag{font-size:11px;font-weight:600;color:var(--muted);background:var(--line-2);
+    padding:3px 8px;border-radius:20px;letter-spacing:0}
+
+  label.f{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 5px}
+  input,select{
+    width:100%;font-family:inherit;font-size:14px;color:var(--ink);background:#fff;
+    border:1px solid var(--line);border-radius:10px;padding:9px 11px;transition:.15s;
+  }
+  input:focus,select:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(39,75,120,.12)}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:1fr 1fr 1fr}
+  .field{min-width:0}
+  @media(max-width:560px){.g2,.g3{grid-template-columns:1fr}}
+
+  .btn{font-family:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);
+    background:#fff;color:var(--ink);border-radius:10px;padding:9px 14px;cursor:pointer;transition:.15s}
+  .btn:hover{background:var(--line-2)}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.primary:hover{background:var(--brand-ink)}
+  .btn.ghost-danger{color:var(--out);border-color:var(--out-soft);background:var(--out-soft)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* ---- Clock hero ---- */
+  .clock-wrap{text-align:center;padding:6px 0 4px}
+  .clock-date{font-size:14px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+  .clock-time{font-family:var(--mono);font-weight:700;font-size:clamp(44px,13vw,76px);
+    letter-spacing:-.02em;line-height:1.05;color:var(--ink);font-variant-numeric:tabular-nums}
+  .clock-time .sec{color:var(--brand);font-size:.5em;vertical-align:.28em;margin-left:.1em}
+
+  .punch-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+  .punch{border:0;border-radius:15px;padding:20px 12px;cursor:pointer;font-family:inherit;
+    font-weight:700;font-size:19px;color:#fff;transition:transform .12s,filter .15s;display:flex;
+    flex-direction:column;align-items:center;gap:4px}
+  .punch small{font-weight:500;font-size:12px;opacity:.85;letter-spacing:.04em}
+  .punch.in{background:linear-gradient(160deg,#25976a,var(--in))}
+  .punch.out{background:linear-gradient(160deg,#d05a1e,var(--out))}
+  .punch:active{transform:scale(.97)}
+  .punch:hover{filter:brightness(1.05)}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.05)}100%{transform:scale(1)}}
+  .punch.pop{animation:pop .3s}
+
+  /* ---- table ---- */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-2);white-space:nowrap}
+  th{background:#FBF3EA;color:var(--brand-ink);font-weight:700;font-size:12px;position:sticky;top:0}
+  tbody tr:hover{background:var(--line-2)}
+  td.mono,th.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .pill{font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px}
+  .pill.in{background:var(--in-soft);color:var(--in)}
+  .pill.out{background:var(--out-soft);color:var(--out)}
+  .icon-btn{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:15px;padding:3px 6px;border-radius:6px}
+  .icon-btn:hover{background:var(--out-soft);color:var(--out)}
+
+  .roster-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:11px;margin-bottom:8px}
+  .roster-item .avatar{width:34px;height:34px;border-radius:9px;background:var(--brand);color:#fff;
+    display:grid;place-items:center;font-weight:700;font-size:14px;flex:none}
+  .roster-item .meta{flex:1;min-width:0}
+  .roster-item .meta b{font-size:14px}
+  .roster-item .meta span{display:block;font-size:12px;color:var(--muted)}
+
+  .row-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .count-badge{font-family:var(--mono);font-weight:700;color:var(--brand)}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .checks{display:flex;flex-wrap:wrap;gap:8px}
+  .chk{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;font-size:13px;font-weight:500;cursor:pointer;user-select:none}
+  .chk input{width:auto}
+  .chk.on{border-color:var(--brand);background:rgba(39,75,120,.06)}
+
+  .switch{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;cursor:pointer}
+  .switch input{width:auto;accent-color:var(--brand)}
+
+  .empty{text-align:center;color:var(--muted);padding:34px 12px;font-size:13px}
+
+  /* toast */
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;font-size:14px;font-weight:600;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:.25s;z-index:50;
+    display:flex;align-items:center;gap:9px;max-width:90vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast .dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+  #toast.ok .dot{background:#3ad089}
+
+  .view{display:none}
+  .view.active{display:block}
+  .loading{padding:40px;text-align:center;color:var(--muted)}
+</style>
+
+<header class="app">
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+  </div>
+  <div>
+    <h1>打卡系統</h1>
+    <div class="sub">即時打卡、批次產生紀錄，一鍵匯出成匯入範本格式</div>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-v="punch" class="active">打卡</button>
+  <button data-v="batch">批次產生</button>
+  <button data-v="records">紀錄與匯出</button>
+  <button data-v="roster">員工名單</button>
+</nav>
+
+<div id="app"><div class="loading">載入中…</div></div>
+
+<!-- ============ PUNCH ============ -->
+<template id="tpl-punch">
+<div class="view" data-view="punch">
+  <div class="card">
+    <div class="clock-wrap">
+      <div class="clock-date" id="clkDate">—</div>
+      <div class="clock-time" id="clkTime">--:--<span class="sec">--</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>誰要打卡</h2>
+    <div class="grid g2">
+      <div class="field">
+        <label class="f">員工</label>
+        <select id="pEmp"></select>
+      </div>
+      <div class="field">
+        <label class="f">班別</label>
+        <select id="pShift">
+          <option>固定班</option><option>早班</option><option>午班</option><option>晚班</option><option>大夜班</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label class="f">打卡地點（GPS 關閉時使用）</label>
+      <input id="pLoc" placeholder="例如：台北辦公室">
+    </div>
+    <label class="switch" style="margin-top:12px"><input type="checkbox" id="pGps" checked> 使用 GPS 定位打卡（記錄座標）</label>
+    <div class="hint" id="pGpsStatus">開啟後，按下打卡會擷取此裝置的 GPS 座標，需允許瀏覽器定位權限。</div>
+    <div class="punch-row">
+      <button class="punch in" id="btnIn">上班<small>CLOCK IN</small></button>
+      <button class="punch out" id="btnOut">下班<small>CLOCK OUT</small></button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>今日紀錄 <span class="tag" id="todayCount">0 筆</span></h2>
+    <div id="todayList"></div>
+  </div>
+</div>
+</template>
+
+<!-- ============ BATCH ============ -->
+<template id="tpl-batch">
+<div class="view" data-view="batch">
+  <div class="card">
+    <h2>選擇員工 <span class="tag">可複選</span>
+      <button class="btn" id="bToggleAll" style="margin-left:auto;font-size:12px;padding:5px 10px">全部勾選</button></h2>
+    <div class="checks" id="bEmps"></div>
+    <div class="hint" id="bEmpHint">未選擇則不產生任何紀錄。到「員工名單」新增員工。</div>
+  </div>
+  <div class="card">
+    <h2>日期與時間</h2>
+    <div class="grid g2">
+      <div class="field"><label class="f">開始日期</label><input type="date" id="bStart"></div>
+      <div class="field"><label class="f">結束日期</label><input type="date" id="bEnd"></div>
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">上班時間</label><input type="time" id="bIn" value="09:00"></div>
+      <div class="field"><label class="f">下班時間</label><input type="time" id="bOut" value="18:00"></div>
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">打卡地點（留白則用員工預設）</label><input id="bLoc" placeholder="沿用員工預設地點"></div>
+      <div class="field"><label class="f">班別（留白則用員工預設）</label><input id="bShift" placeholder="沿用員工預設班別"></div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label class="f">GPS 座標（選填，格式：經度,緯度）— 填了就用 GPS 打卡並每筆微調</label>
+      <input id="bGps" placeholder="例如：120.539104,23.509710">
+    </div>
+    <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+      <label class="switch"><input type="checkbox" id="bWeekday" checked> 只產生平日（跳過週六、週日）</label>
+      <label class="switch"><input type="checkbox" id="bJitter"> 時間加入 ±隨機分鐘，讓紀錄更自然</label>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row-actions" style="margin-top:0;justify-content:space-between">
+      <div>預計產生 <span class="count-badge" id="bPreview">0</span> 筆紀錄</div>
+      <button class="btn primary" id="bGen">產生並加入紀錄</button>
+    </div>
+    <div class="hint">每位員工每天會產生一筆「上班」和一筆「下班」。</div>
+  </div>
+</div>
+</template>
+
+<!-- ============ RECORDS ============ -->
+<template id="tpl-records">
+<div class="view" data-view="records">
+  <div class="card">
+    <h2>所有紀錄 <span class="tag" id="recCount">0 筆</span></h2>
+    <div class="row-actions" style="margin-top:0">
+      <button class="btn primary" id="expXlsx">匯出 Excel（匯入範本）</button>
+      <button class="btn primary" id="expLog">匯出 Excel（Log 紀錄格式）</button>
+      <button class="btn" id="expCsv">匯出 CSV</button>
+      <button class="btn ghost-danger" id="clearAll">清空全部</button>
+    </div>
+    <div class="hint">「匯入範本」為 7 欄格式，可直接匯入差勤系統；「Log 紀錄格式」比照昇億匯出檔（含部門、上下班打卡方式與地點、GPS 座標）。</div>
+  </div>
+  <div class="card">
+    <div id="recTableWrap"></div>
+  </div>
+</div>
+</template>
+
+<!-- ============ ROSTER ============ -->
+<template id="tpl-roster">
+<div class="view" data-view="roster">
+  <div class="card">
+    <h2>新增員工</h2>
+    <div class="grid g2">
+      <div class="field"><label class="f">員工編號 *</label><input id="rId" placeholder="例如：TYF014"></div>
+      <div class="field"><label class="f">姓名 *</label><input id="rName" placeholder="例如：楊尼尼"></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label class="f">部門</label><input id="rDept" placeholder="例如：凡圖滋業務"></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">預設打卡地點</label><input id="rLoc" placeholder="例如：台北辦公室"></div>
+      <div class="field">
+        <label class="f">預設班別</label>
+        <select id="rShift"><option>固定班</option><option>早班</option><option>午班</option><option>晚班</option><option>大夜班</option></select>
+      </div>
+    </div>
+    <div class="row-actions"><button class="btn primary" id="rAdd">加入名單</button>
+      <button class="btn" id="rLoadDefault">載入預設名單（25 人）</button></div>
+  </div>
+  <div class="card">
+    <h2>目前名單 <span class="tag" id="rosterCount">0 人</span></h2>
+    <div id="rosterList"></div>
+  </div>
+</div>
+</template>
+
+<div id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
+
+<script>
+/* ---------- header labels: EXACT match to the import template ---------- */
+const HEADERS = [
+  "員工編號* (必填)",
+  "姓名",
+  "打卡日期* (必填)\nyyyy/mm/dd",
+  "打卡時間* (必填)\nhh:mm",
+  "類別* (必填)\n上班、下班",
+  "打卡地點* (必填)",
+  "班別 (非必填)\n如未填寫，則預設為固定班",
+];
+
+/* ---------- state ---------- */
+let roster = [];   // {id,name,loc,shift}
+let records = [];  // {rid,empId,name,date,time,cat,loc,shift}
+let currentView = 'punch';
+
+/* ---------- 預設名單（由名單.xlsx 匯入） ---------- */
+const DEFAULT_ROSTER = [
+  {id:'sales001',name:'劉秉志',dept:'嘉興',loc:'',shift:'固定班'},
+  {id:'sales002',name:'陳淵勝',dept:'昇億',loc:'',shift:'固定班'},
+  {id:'sales003',name:'林怡岑',dept:'昇億',loc:'',shift:'固定班'},
+  {id:'sales004',name:'朱昱騰',dept:'昇億',loc:'',shift:'固定班'},
+  {id:'sales005',name:'楊雨昀',dept:'昇億',loc:'',shift:'固定班'},
+  {id:'sales006',name:'姚儒智',dept:'昇億',loc:'',shift:'固定班'},
+  {id:'sales007',name:'張有志',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales008',name:'林政達',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales009',name:'鄭珺澤',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales010',name:'曾鴻文',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales011',name:'林源鴻',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales012',name:'吳俊逸',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales013',name:'鍾明宗',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales014',name:'張景堯',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales015',name:'呂菀眞',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales016',name:'許英豪',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales017',name:'黃品翰',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales018',name:'A',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales019',name:'B',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales020',name:'許忠仁',dept:'昇億',loc:'',shift:'固定班'},
+  {id:'sales021',name:'陳韋苹',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales022',name:'黃堇瑜',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales023',name:'司機-林韋廷',dept:'凡圖滋',loc:'',shift:'固定班'},
+  {id:'sales024',name:'黃嘉盈',dept:'嘉興',loc:'',shift:'固定班'},
+  {id:'sales025',name:'蔡秉均',dept:'凡圖滋',loc:'',shift:'固定班'},
+];
+
+
+/* ---------- storage helpers (localStorage — works on any static host or local file) ---------- */
+function loadAll(){
+  try{ const r = localStorage.getItem('dk_roster'); if(r) roster = JSON.parse(r); }catch(e){}
+  try{ const r = localStorage.getItem('dk_records'); if(r) records = JSON.parse(r); }catch(e){}
+  if(!roster.length){
+    roster = DEFAULT_ROSTER.map(o=>({...o}));
+    saveRoster();
+  }
+}
+function saveRoster(){ try{ localStorage.setItem('dk_roster', JSON.stringify(roster)); }catch(e){} }
+function saveRecords(){ try{ localStorage.setItem('dk_records', JSON.stringify(records)); }catch(e){} }
+
+/* ---------- utils ---------- */
+const pad=n=>String(n).padStart(2,'0');
+function fmtDate(d){ return d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate()); }
+function fmtTime(d){ return pad(d.getHours())+':'+pad(d.getMinutes()); }
+const WD=['日','一','二','三','四','五','六'];
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function toast(msg,ok){
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.classList.toggle('ok',!!ok); t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1900);
+}
+function initials(name){ return (name||'?').trim().slice(-2); }
+
+/* ---------- render dispatch ---------- */
+function render(){
+  const app=document.getElementById('app');
+  const tpl=document.getElementById('tpl-'+currentView);
+  app.innerHTML=''; app.appendChild(tpl.content.cloneNode(true));
+  app.querySelector('.view').classList.add('active');
+  ({punch:renderPunch,batch:renderBatch,records:renderRecords,roster:renderRoster}[currentView])();
+}
+
+/* ---------- GPS helpers ---------- */
+function gpsString(lng,lat){ return 'GPS ('+lng+'，'+lat+')'; }   // 經度在前、緯度在後、全形逗號（比照昇億範例）
+function getGPS(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      p=>resolve({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}),
+      ()=>resolve(null),
+      {enableHighAccuracy:true,timeout:8000,maximumAge:0});
+  });
+}
+function mapsLink(lat,lng,label){ return `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener">${label}</a>`; }
+function locDisplay(r){
+  if(r.method==='GPS' && r.lat!=null && r.lng!=null)
+    return mapsLink(r.lat,r.lng,`GPS (${(+r.lng).toFixed(6)}，${(+r.lat).toFixed(6)})`);
+  return r.loc||'—';
+}
+
+/* ===== PUNCH ===== */
+let clockTimer=null;
+function tickClock(){
+  const now=new Date();
+  const dEl=document.getElementById('clkDate'), tEl=document.getElementById('clkTime');
+  if(!dEl||!tEl){ clearInterval(clockTimer); return; }
+  dEl.textContent=fmtDate(now)+'（週'+WD[now.getDay()]+'）';
+  tEl.innerHTML=pad(now.getHours())+':'+pad(now.getMinutes())+'<span class="sec">'+pad(now.getSeconds())+'</span>';
+}
+function renderPunch(){
+  const emp=document.getElementById('pEmp');
+  emp.innerHTML=roster.map(r=>`<option value="${r.id}">${r.name}（${r.id}）</option>`).join('')
+    || '<option value="">請先到員工名單新增</option>';
+  function fillDefaults(){
+    const r=roster.find(x=>x.id===emp.value);
+    if(r){ document.getElementById('pLoc').value=r.loc||''; document.getElementById('pShift').value=r.shift||'固定班'; }
+  }
+  emp.onchange=fillDefaults; fillDefaults();
+  clearInterval(clockTimer); tickClock(); clockTimer=setInterval(tickClock,1000);
+  document.getElementById('btnIn').onclick=()=>punch('上班','btnIn');
+  document.getElementById('btnOut').onclick=()=>punch('下班','btnOut');
+  renderToday();
+}
+async function punch(cat,btnId){
+  const emp=document.getElementById('pEmp'); const r=roster.find(x=>x.id===emp.value);
+  if(!r){ toast('請先選擇員工'); return; }
+  const b=document.getElementById(btnId);
+  let method='手動', lat=null, lng=null, loc=document.getElementById('pLoc').value.trim()||r.loc||'';
+  if(document.getElementById('pGps').checked){
+    const st=document.getElementById('pGpsStatus'), prev=st.textContent;
+    st.textContent='定位中…請稍候'; b.disabled=true;
+    const g=await getGPS(); b.disabled=false;
+    if(g){ method='GPS'; lat=g.lat; lng=g.lng; loc=gpsString(lng,lat);
+      st.textContent='已取得座標 · 精確度約 '+Math.round(g.acc)+' 公尺'; }
+    else{ st.textContent=prev; toast('無法取得 GPS，改用文字地點'); }
+  }
+  const now=new Date();
+  records.push({rid:uid(),empId:r.id,name:r.name,date:fmtDate(now),time:fmtTime(now),
+    cat, loc, method, lat, lng, shift:document.getElementById('pShift').value});
+  await saveRecords();
+  b.classList.add('pop'); setTimeout(()=>b.classList.remove('pop'),300);
+  toast(`${r.name} ${cat} · ${fmtTime(now)}${method==='GPS'?' · 已定位':''}`,true);
+  renderToday();
+}
+function renderToday(){
+  const today=fmtDate(new Date());
+  const list=records.filter(r=>r.date===today).slice().reverse();
+  document.getElementById('todayCount').textContent=list.length+' 筆';
+  const el=document.getElementById('todayList');
+  if(!list.length){ el.innerHTML='<div class="empty">今天還沒有打卡紀錄。</div>'; return; }
+  el.innerHTML='<div class="tablewrap"><table><thead><tr><th>時間</th><th>員工</th><th>類別</th><th>方式</th><th>打卡地點</th></tr></thead><tbody>'+
+    list.map(r=>`<tr><td class="mono">${r.time}</td><td>${r.name}</td>
+      <td><span class="pill ${r.cat==='上班'?'in':'out'}">${r.cat}</span></td>
+      <td>${r.method||'手動'}</td><td>${locDisplay(r)}</td></tr>`).join('')+
+    '</tbody></table></div>';
+}
+
+/* ===== BATCH ===== */
+function renderBatch(){
+  const box=document.getElementById('bEmps');
+  box.innerHTML=roster.map(r=>`<label class="chk"><input type="checkbox" value="${r.id}">${r.name}<span style="color:var(--muted)">${r.id}</span></label>`).join('')
+    || '<span class="hint">尚無員工，請先到「員工名單」新增。</span>';
+  const toggle=document.getElementById('bToggleAll');
+  function syncToggle(){
+    const boxes=[...document.querySelectorAll('#bEmps input')];
+    const allOn=boxes.length>0 && boxes.every(c=>c.checked);
+    if(toggle) toggle.textContent=allOn?'全部取消':'全部勾選';
+  }
+  box.querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>{
+    c.closest('.chk').classList.toggle('on',c.checked); syncToggle(); updatePreview();
+  }));
+  if(toggle) toggle.onclick=()=>{
+    const boxes=[...document.querySelectorAll('#bEmps input')];
+    const turnOn=!(boxes.length>0 && boxes.every(c=>c.checked));
+    boxes.forEach(c=>{ c.checked=turnOn; c.closest('.chk').classList.toggle('on',turnOn); });
+    syncToggle(); updatePreview();
+  };
+  syncToggle();
+  const t=new Date(); const s=new Date(t.getFullYear(),t.getMonth(),1);
+  document.getElementById('bStart').value=s.toISOString().slice(0,10);
+  document.getElementById('bEnd').value=t.toISOString().slice(0,10);
+  ['bStart','bEnd','bWeekday'].forEach(id=>document.getElementById(id).addEventListener('change',updatePreview));
+  document.getElementById('bGen').onclick=genBatch;
+  updatePreview();
+}
+function selectedEmpIds(){ return [...document.querySelectorAll('#bEmps input:checked')].map(c=>c.value); }
+function eachDay(cb){
+  const s=new Date(document.getElementById('bStart').value);
+  const e=new Date(document.getElementById('bEnd').value);
+  const wkOnly=document.getElementById('bWeekday').checked;
+  if(isNaN(s)||isNaN(e)||e<s) return;
+  for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)){
+    const wd=d.getDay(); if(wkOnly&&(wd===0||wd===6)) continue;
+    cb(new Date(d));
+  }
+}
+function countDays(){ let n=0; eachDay(()=>n++); return n; }
+function updatePreview(){
+  const n=selectedEmpIds().length*countDays()*2;
+  document.getElementById('bPreview').textContent=n;
+  document.getElementById('bGen').disabled=n===0;
+}
+function jitter(hhmm){
+  const [h,m]=hhmm.split(':').map(Number);
+  const off=Math.floor(Math.random()*21)-10; // ±10 min
+  let total=h*60+m+off; total=(total+1440)%1440;
+  return pad(Math.floor(total/60))+':'+pad(total%60);
+}
+function parseGps(str){
+  const m=(str||'').trim().match(/(-?\d+(?:\.\d+)?)\s*[，,]\s*(-?\d+(?:\.\d+)?)/);
+  return m ? {lng:parseFloat(m[1]),lat:parseFloat(m[2])} : null;
+}
+async function genBatch(){
+  const ids=selectedEmpIds(); if(!ids.length){ toast('請先選擇員工'); return; }
+  const inT=document.getElementById('bIn').value, outT=document.getElementById('bOut').value;
+  const locOv=document.getElementById('bLoc').value.trim(), shiftOv=document.getElementById('bShift').value.trim();
+  const jit=document.getElementById('bJitter').checked;
+  const base=parseGps(document.getElementById('bGps').value);
+  const rec=(ds,t,cat,r)=>{
+    const sh=shiftOv||r.shift||'固定班';
+    if(base){
+      const lat=base.lat+(Math.random()-.5)*0.001, lng=base.lng+(Math.random()-.5)*0.001;
+      return {rid:uid(),empId:r.id,name:r.name,date:ds,time:t,cat,loc:gpsString(lng,lat),method:'GPS',lat,lng,shift:sh};
+    }
+    return {rid:uid(),empId:r.id,name:r.name,date:ds,time:t,cat,loc:locOv||r.loc||'',method:'手動',lat:null,lng:null,shift:sh};
+  };
+  let added=0;
+  eachDay(d=>{
+    const ds=fmtDate(d);
+    ids.forEach(id=>{
+      const r=roster.find(x=>x.id===id); if(!r) return;
+      records.push(rec(ds,jit?jitter(inT):inT,'上班',r));
+      records.push(rec(ds,jit?jitter(outT):outT,'下班',r));
+      added+=2;
+    });
+  });
+  await saveRecords();
+  toast(`已產生 ${added} 筆紀錄`,true);
+}
+
+/* ===== RECORDS ===== */
+function sortRecords(){
+  return records.slice().sort((a,b)=> (a.date+a.time+a.empId) < (b.date+b.time+b.empId) ? -1 : 1);
+}
+function renderRecords(){
+  document.getElementById('recCount').textContent=records.length+' 筆';
+  const wrap=document.getElementById('recTableWrap');
+  if(!records.length){ wrap.innerHTML='<div class="empty">還沒有任何紀錄。到「打卡」或「批次產生」建立紀錄。</div>'; }
+  else{
+    const rows=sortRecords();
+    wrap.innerHTML='<div class="tablewrap"><table><thead><tr>'+
+      '<th>員工編號</th><th>姓名</th><th class="mono">打卡日期</th><th class="mono">時間</th><th>類別</th><th>方式</th><th>打卡地點</th><th>班別</th><th></th></tr></thead><tbody>'+
+      rows.map(r=>`<tr>
+        <td class="mono">${r.empId}</td><td>${r.name}</td>
+        <td class="mono">${r.date}</td><td class="mono">${r.time}</td>
+        <td><span class="pill ${r.cat==='上班'?'in':'out'}">${r.cat}</span></td>
+        <td>${r.method||'手動'}</td><td>${locDisplay(r)}</td><td>${r.shift||'固定班'}</td>
+        <td><button class="icon-btn" data-del="${r.rid}" title="刪除">✕</button></td></tr>`).join('')+
+      '</tbody></table></div>';
+    wrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+      records=records.filter(x=>x.rid!==b.dataset.del); await saveRecords(); renderRecords();
+    });
+  }
+  document.getElementById('expXlsx').onclick=exportXlsx;
+  document.getElementById('expLog').onclick=exportLogXlsx;
+  document.getElementById('expCsv').onclick=exportCsv;
+  document.getElementById('clearAll').onclick=async()=>{
+    if(!records.length){ toast('目前沒有紀錄'); return; }
+    if(confirm('確定要清空全部紀錄嗎？此動作無法復原。')){ records=[]; await saveRecords(); renderRecords(); toast('已清空'); }
+  };
+}
+function buildAOA(){
+  const aoa=[HEADERS];
+  sortRecords().forEach(r=>aoa.push([r.empId,r.name,r.date,r.time,r.cat,r.loc||'',r.shift||'固定班']));
+  return aoa;
+}
+function exportXlsx(){
+  if(!records.length){ toast('沒有可匯出的紀錄'); return; }
+  const ws=XLSX.utils.aoa_to_sheet(buildAOA());
+  ws['!cols']=[{wch:14},{wch:12},{wch:16},{wch:12},{wch:12},{wch:18},{wch:20}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'工作表1');
+  const today=fmtDate(new Date()).replace(/\//g,'');
+  XLSX.writeFile(wb,`打卡紀錄_${today}.xlsx`);
+  toast('已匯出 Excel',true);
+}
+function exportCsv(){
+  if(!records.length){ toast('沒有可匯出的紀錄'); return; }
+  const esc=v=>/[",\n]/.test(v)?'"'+String(v).replace(/"/g,'""')+'"':v;
+  const flat=HEADERS.map(h=>h.replace(/\n/g,' '));
+  const lines=[flat.map(esc).join(',')].concat(
+    sortRecords().map(r=>[r.empId,r.name,r.date,r.time,r.cat,r.loc||'',r.shift||'固定班'].map(esc).join(',')));
+  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.csv`; a.click();
+  toast('已匯出 CSV',true);
+}
+
+/* ===== Log 紀錄格式匯出（比照昇億匯出檔）===== */
+const LOG_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
+  "上班打卡時間","下班打卡時間","紀錄備註","提早上班原因",
+  "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因",
+  "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因"];
+function deptOf(empId){ const r=roster.find(x=>x.id===empId); return (r&&r.dept)||''; }
+function buildLogAOA(){
+  const D='--';
+  const aoa=[LOG_HEADERS];
+  sortRecords().forEach(r=>{
+    const isIn=r.cat==='上班', m=r.method||'手動', loc=r.loc||'';
+    aoa.push([
+      r.empId, r.name, deptOf(r.empId), r.date, D, r.shift||'固定班',
+      isIn?r.time:D, isIn?D:r.time, '', D,
+      isIn?m:D, isIn?loc:D, D, D,
+      isIn?D:m, isIn?D:loc, D
+    ]);
+  });
+  return aoa;
+}
+function exportLogXlsx(){
+  if(!records.length){ toast('沒有可匯出的紀錄'); return; }
+  const ws=XLSX.utils.aoa_to_sheet(buildLogAOA());
+  ws['!cols']=[{wch:12},{wch:10},{wch:14},{wch:12},{wch:14},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:12},{wch:30},{wch:22},{wch:12},{wch:12},{wch:30},{wch:22}];
+  const ds=sortRecords().map(r=>r.date);
+  const range=ds.length?(ds[0]+'-'+ds[ds.length-1]).replace(/\//g,'.'):'';
+  let sheetName='【'+range+'_Log 紀錄】'; if(sheetName.length>31) sheetName='Log 紀錄';
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,`打卡Log紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
+  toast('已匯出 Log 紀錄格式',true);
+}
+
+/* ===== ROSTER ===== */
+function renderRoster(){
+  document.getElementById('rosterCount').textContent=roster.length+' 人';
+  const list=document.getElementById('rosterList');
+  list.innerHTML=roster.length? roster.map(r=>`
+    <div class="roster-item">
+      <div class="avatar">${initials(r.name)}</div>
+      <div class="meta"><b>${r.name}</b><span>${r.id}${r.dept?' · '+r.dept:''} · ${r.loc||'未設地點'} · ${r.shift||'固定班'}</span></div>
+      <button class="icon-btn" data-drm="${r.id}" title="刪除">✕</button>
+    </div>`).join('') : '<div class="empty">名單是空的，用上方表單新增第一位員工。</div>';
+  list.querySelectorAll('[data-drm]').forEach(b=>b.onclick=async()=>{
+    roster=roster.filter(x=>x.id!==b.dataset.drm); await saveRoster(); renderRoster();
+  });
+  const ld=document.getElementById('rLoadDefault');
+  if(ld) ld.onclick=async()=>{
+    if(confirm('載入預設名單會「取代」目前的員工名單（不影響已建立的打卡紀錄），確定嗎？')){
+      roster=DEFAULT_ROSTER.map(o=>({...o})); await saveRoster(); renderRoster(); toast('已載入預設名單（'+roster.length+' 人）',true);
+    }
+  };
+  document.getElementById('rAdd').onclick=async()=>{
+    const id=document.getElementById('rId').value.trim(), name=document.getElementById('rName').value.trim();
+    if(!id||!name){ toast('請填員工編號與姓名'); return; }
+    if(roster.some(x=>x.id===id)){ toast('此員工編號已存在'); return; }
+    roster.push({id,name,dept:document.getElementById('rDept').value.trim(),loc:document.getElementById('rLoc').value.trim(),shift:document.getElementById('rShift').value});
+    await saveRoster();
+    document.getElementById('rId').value=''; document.getElementById('rName').value=''; document.getElementById('rDept').value=''; document.getElementById('rLoc').value='';
+    renderRoster(); toast(`已加入 ${name}`,true);
+  };
+}
+
+/* ---------- tabs ---------- */
+document.getElementById('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); currentView=b.dataset.v; render();
+});
+
+/* ---------- init ---------- */
+loadAll(); render();
+</script>
