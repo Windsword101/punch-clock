@@ -264,21 +264,33 @@
 <template id="tpl-roster">
 <div class="view" data-view="roster">
   <div class="card">
-    <h2>新增員工</h2>
+    <h2 id="rFormTitle">新增員工</h2>
     <div class="grid g2">
-      <div class="field"><label class="f">員工編號 *</label><input id="rId" placeholder="例如：TYF014"></div>
-      <div class="field"><label class="f">姓名 *</label><input id="rName" placeholder="例如：楊尼尼"></div>
+      <div class="field"><label class="f">員工編號 *</label><input id="rId" placeholder="例如：sales001"></div>
+      <div class="field"><label class="f">姓名 *</label><input id="rName" placeholder="例如：劉秉志"></div>
     </div>
-    <div class="field" style="margin-top:12px"><label class="f">部門</label><input id="rDept" placeholder="例如：凡圖滋業務"></div>
     <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">部門</label><input id="rDept" placeholder="例如：凡圖滋"></div>
       <div class="field"><label class="f">預設打卡地點</label><input id="rLoc" placeholder="例如：台北辦公室"></div>
-      <div class="field">
-        <label class="f">預設班別</label>
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">預設 GPS 座標（經度,緯度）</label><input id="rGps" placeholder="例如：120.539104,23.509710"></div>
+      <div class="field"><label class="f">預設班別</label>
         <select id="rShift"><option>固定班</option><option>早班</option><option>午班</option><option>晚班</option><option>大夜班</option></select>
       </div>
     </div>
-    <div class="row-actions"><button class="btn primary" id="rAdd">加入名單</button>
-      <button class="btn" id="rLoadDefault">載入預設名單（25 人）</button></div>
+    <div class="row-actions">
+      <button class="btn primary" id="rAdd">加入名單</button>
+      <button class="btn" id="rCancel" style="display:none">取消編輯</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>匯入名單 <span class="tag">Excel / CSV</span></h2>
+    <div class="hint" style="margin-top:0">從檔案匯入員工名單（會取代目前名單）。可辨識欄位：員工編號、姓名、部門、打卡地點、GPS、班別。名單只存在你這台裝置的瀏覽器，不會寫進網頁原始碼。</div>
+    <div class="row-actions">
+      <button class="btn primary" id="rImportBtn">選擇檔案匯入</button>
+      <input type="file" id="rImportFile" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>
   </div>
   <div class="card">
     <h2>目前名單 <span class="tag" id="rosterCount">0 人</span></h2>
@@ -302,38 +314,13 @@ const HEADERS = [
 ];
 
 /* ---------- state ---------- */
-let roster = [];   // {id,name,loc,shift}
+let roster = [];   // {id,name,dept,loc,gps,shift}
+let editingId = null;
 let records = [];  // {rid,empId,name,date,time,cat,loc,shift}
 let currentView = 'punch';
 
 /* ---------- 預設名單（由名單.xlsx 匯入） ---------- */
-const DEFAULT_ROSTER = [
-  {id:'sales001',name:'劉秉志',dept:'嘉興',loc:'',shift:'固定班'},
-  {id:'sales002',name:'陳淵勝',dept:'昇億',loc:'',shift:'固定班'},
-  {id:'sales003',name:'林怡岑',dept:'昇億',loc:'',shift:'固定班'},
-  {id:'sales004',name:'朱昱騰',dept:'昇億',loc:'',shift:'固定班'},
-  {id:'sales005',name:'楊雨昀',dept:'昇億',loc:'',shift:'固定班'},
-  {id:'sales006',name:'姚儒智',dept:'昇億',loc:'',shift:'固定班'},
-  {id:'sales007',name:'張有志',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales008',name:'林政達',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales009',name:'鄭珺澤',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales010',name:'曾鴻文',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales011',name:'林源鴻',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales012',name:'吳俊逸',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales013',name:'鍾明宗',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales014',name:'張景堯',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales015',name:'呂菀眞',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales016',name:'許英豪',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales017',name:'黃品翰',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales018',name:'A',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales019',name:'B',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales020',name:'許忠仁',dept:'昇億',loc:'',shift:'固定班'},
-  {id:'sales021',name:'陳韋苹',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales022',name:'黃堇瑜',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales023',name:'司機-林韋廷',dept:'凡圖滋',loc:'',shift:'固定班'},
-  {id:'sales024',name:'黃嘉盈',dept:'嘉興',loc:'',shift:'固定班'},
-  {id:'sales025',name:'蔡秉均',dept:'凡圖滋',loc:'',shift:'固定班'},
-];
+const DEFAULT_ROSTER = [];  // 已清空，名單改由「匯入名單」載入，不寫進公開原始碼
 
 
 /* ---------- storage helpers (localStorage — works on any static host or local file) ---------- */
@@ -509,8 +496,9 @@ async function genBatch(){
   const base=parseGps(document.getElementById('bGps').value);
   const rec=(ds,t,cat,r)=>{
     const sh=shiftOv||r.shift||'固定班';
-    if(base){
-      const lat=base.lat+(Math.random()-.5)*0.001, lng=base.lng+(Math.random()-.5)*0.001;
+    const g=base||parseGps(r.gps);
+    if(g){
+      const lat=g.lat+(Math.random()-.5)*0.001, lng=g.lng+(Math.random()-.5)*0.001;
       return {rid:uid(),empId:r.id,name:r.name,date:ds,time:t,cat,loc:gpsString(lng,lat),method:'GPS',lat,lng,shift:sh};
     }
     return {rid:uid(),empId:r.id,name:r.name,date:ds,time:t,cat,loc:locOv||r.loc||'',method:'手動',lat:null,lng:null,shift:sh};
@@ -627,27 +615,99 @@ function renderRoster(){
   list.innerHTML=roster.length? roster.map(r=>`
     <div class="roster-item">
       <div class="avatar">${initials(r.name)}</div>
-      <div class="meta"><b>${r.name}</b><span>${r.id}${r.dept?' · '+r.dept:''} · ${r.loc||'未設地點'} · ${r.shift||'固定班'}</span></div>
-      <button class="icon-btn" data-drm="${r.id}" title="刪除">✕</button>
-    </div>`).join('') : '<div class="empty">名單是空的，用上方表單新增第一位員工。</div>';
+      <div class="meta"><b>${r.name}</b><span>${r.id}${r.dept?' · '+r.dept:''} · ${r.loc||'未設地點'} · ${r.shift||'固定班'}${r.gps?' · GPS '+r.gps:''}</span></div>
+      <button class="icon-btn" data-edit="${r.id}" title="編輯">&#9998;</button>
+      <button class="icon-btn" data-drm="${r.id}" title="刪除">&#10005;</button>
+    </div>`).join('') : '<div class="empty">名單是空的。用上方表單新增，或用「匯入名單」從 Excel／CSV 載入。</div>';
+
   list.querySelectorAll('[data-drm]').forEach(b=>b.onclick=async()=>{
-    roster=roster.filter(x=>x.id!==b.dataset.drm); await saveRoster(); renderRoster();
+    roster=roster.filter(x=>x.id!==b.dataset.drm); await saveRoster();
+    if(editingId===b.dataset.drm) resetForm();
+    renderRoster();
   });
-  const ld=document.getElementById('rLoadDefault');
-  if(ld) ld.onclick=async()=>{
-    if(confirm('載入預設名單會「取代」目前的員工名單（不影響已建立的打卡紀錄），確定嗎？')){
-      roster=DEFAULT_ROSTER.map(o=>({...o})); await saveRoster(); renderRoster(); toast('已載入預設名單（'+roster.length+' 人）',true);
-    }
-  };
-  document.getElementById('rAdd').onclick=async()=>{
-    const id=document.getElementById('rId').value.trim(), name=document.getElementById('rName').value.trim();
-    if(!id||!name){ toast('請填員工編號與姓名'); return; }
+  list.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>startEdit(b.dataset.edit));
+
+  document.getElementById('rAdd').onclick=saveEmployee;
+  document.getElementById('rCancel').onclick=resetForm;
+
+  const imp=document.getElementById('rImportBtn'), file=document.getElementById('rImportFile');
+  imp.onclick=()=>file.click();
+  file.onchange=e=>{ const f=e.target.files[0]; if(f) importRosterFile(f); file.value=''; };
+
+  refreshFormMode();
+}
+function fval(id){ return document.getElementById(id).value.trim(); }
+function refreshFormMode(){
+  const editing=!!editingId;
+  document.getElementById('rFormTitle').textContent=editing?('編輯員工：'+editingId):'新增員工';
+  document.getElementById('rAdd').textContent=editing?'儲存修改':'加入名單';
+  document.getElementById('rCancel').style.display=editing?'':'none';
+  document.getElementById('rId').readOnly=editing;
+}
+function resetForm(){
+  editingId=null;
+  ['rId','rName','rDept','rLoc','rGps'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('rShift').value='固定班';
+  refreshFormMode();
+}
+function startEdit(id){
+  const r=roster.find(x=>x.id===id); if(!r) return;
+  editingId=id;
+  document.getElementById('rId').value=r.id;
+  document.getElementById('rName').value=r.name||'';
+  document.getElementById('rDept').value=r.dept||'';
+  document.getElementById('rLoc').value=r.loc||'';
+  document.getElementById('rGps').value=r.gps||'';
+  document.getElementById('rShift').value=r.shift||'固定班';
+  refreshFormMode();
+  document.getElementById('rName').focus();
+}
+async function saveEmployee(){
+  const id=fval('rId'), name=fval('rName');
+  if(!id||!name){ toast('請填員工編號與姓名'); return; }
+  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value};
+  if(editingId){
+    const i=roster.findIndex(x=>x.id===editingId);
+    if(i>=0) roster[i]=data;
+    await saveRoster(); resetForm(); renderRoster(); toast('已儲存修改',true);
+  }else{
     if(roster.some(x=>x.id===id)){ toast('此員工編號已存在'); return; }
-    roster.push({id,name,dept:document.getElementById('rDept').value.trim(),loc:document.getElementById('rLoc').value.trim(),shift:document.getElementById('rShift').value});
-    await saveRoster();
-    document.getElementById('rId').value=''; document.getElementById('rName').value=''; document.getElementById('rDept').value=''; document.getElementById('rLoc').value='';
-    renderRoster(); toast(`已加入 ${name}`,true);
+    roster.push(data); await saveRoster(); resetForm(); renderRoster(); toast('已加入 '+name,true);
+  }
+}
+function pickField(row, keys){
+  for(const k of Object.keys(row)){
+    const kk=String(k).toLowerCase().replace(/\s/g,'');
+    for(const want of keys){ if(kk.includes(want)) return row[k]; }
+  }
+  return '';
+}
+function importRosterFile(f){
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      const list=[];
+      rows.forEach(row=>{
+        const id=String(pickField(row,['員工編號','工號','編號','empid','id'])||'').trim();
+        const name=String(pickField(row,['姓名','name'])||'').trim();
+        if(!id||!name) return;
+        list.push({
+          id, name,
+          dept:String(pickField(row,['部門','dept'])||'').trim(),
+          loc:String(pickField(row,['打卡地點','地點','location','loc'])||'').trim(),
+          gps:String(pickField(row,['gps','座標'])||'').trim(),
+          shift:(String(pickField(row,['班別','shift'])||'').trim())||'固定班'
+        });
+      });
+      if(!list.length){ toast('檔案裡找不到「員工編號 / 姓名」欄位'); return; }
+      if(!confirm('將匯入 '+list.length+' 位員工，並「取代」目前名單（不影響打卡紀錄），確定嗎？')) return;
+      roster=list; saveRoster(); resetForm(); renderRoster(); toast('已匯入 '+list.length+' 位員工',true);
+    }catch(err){ toast('讀取檔案失敗，請確認是 Excel 或 CSV 檔'); }
   };
+  reader.readAsArrayBuffer(f);
 }
 
 /* ---------- tabs ---------- */
