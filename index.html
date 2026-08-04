@@ -228,7 +228,10 @@
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
       <label class="switch"><input type="checkbox" id="bWeekday" checked> 只產生平日（跳過週六、週日）</label>
-      <label class="switch"><input type="checkbox" id="bJitter"> 時間加入 ±隨機分鐘，讓紀錄更自然</label>
+      <label class="switch"><input type="checkbox" id="bByHours"> 下班時間 = 上班時間 + 各員工「每日時數」（未設定者用上方下班時間）</label>
+      <div class="switch"><input type="checkbox" id="bJitter"> 時間加入隨機誤差 ±
+        <input type="number" id="bJitAmt" value="10" min="0" style="width:72px;margin:0 6px">
+        <select id="bJitUnit" style="width:auto"><option>分鐘</option><option>小時</option></select></div>
     </div>
   </div>
   <div class="card">
@@ -278,6 +281,10 @@
       <div class="field"><label class="f">預設班別</label>
         <select id="rShift"><option>固定班</option><option>早班</option><option>午班</option><option>晚班</option><option>大夜班</option></select>
       </div>
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">每日上班時數（小時）</label><input id="rHours" type="number" min="0" step="0.5" placeholder="例如：8"></div>
+      <div class="field"></div>
     </div>
     <div class="row-actions">
       <button class="btn primary" id="rAdd">加入名單</button>
@@ -478,11 +485,16 @@ function updatePreview(){
   document.getElementById('bPreview').textContent=n;
   document.getElementById('bGen').disabled=n===0;
 }
-function jitter(hhmm){
+function addMinutes(hhmm, mins){
   const [h,m]=hhmm.split(':').map(Number);
-  const off=Math.floor(Math.random()*21)-10; // ±10 min
-  let total=h*60+m+off; total=(total+1440)%1440;
+  let total=((h*60+m+Math.round(mins))%1440+1440)%1440;
   return pad(Math.floor(total/60))+':'+pad(total%60);
+}
+function jitter(hhmm){
+  const amt=parseFloat(document.getElementById('bJitAmt').value)||0;
+  const maxMin=Math.round(amt*(document.getElementById('bJitUnit').value==='小時'?60:1));
+  if(maxMin<=0) return hhmm;
+  return addMinutes(hhmm, Math.floor(Math.random()*(2*maxMin+1))-maxMin);
 }
 function parseGps(str){
   const m=(str||'').trim().match(/(-?\d+(?:\.\d+)?)\s*[，,]\s*(-?\d+(?:\.\d+)?)/);
@@ -503,13 +515,17 @@ async function genBatch(){
     }
     return {rid:uid(),empId:r.id,name:r.name,date:ds,time:t,cat,loc:locOv||r.loc||'',method:'手動',lat:null,lng:null,shift:sh};
   };
+  const byHours=document.getElementById('bByHours').checked;
   let added=0;
   eachDay(d=>{
     const ds=fmtDate(d);
     ids.forEach(id=>{
       const r=roster.find(x=>x.id===id); if(!r) return;
-      records.push(rec(ds,jit?jitter(inT):inT,'上班',r));
-      records.push(rec(ds,jit?jitter(outT):outT,'下班',r));
+      const tin=jit?jitter(inT):inT;
+      const hrs=parseFloat(r.hours);
+      const tout=(byHours && hrs>0) ? addMinutes(tin, hrs*60) : (jit?jitter(outT):outT);
+      records.push(rec(ds,tin,'上班',r));
+      records.push(rec(ds,tout,'下班',r));
       added+=2;
     });
   });
@@ -615,7 +631,7 @@ function renderRoster(){
   list.innerHTML=roster.length? roster.map(r=>`
     <div class="roster-item">
       <div class="avatar">${initials(r.name)}</div>
-      <div class="meta"><b>${r.name}</b><span>${r.id}${r.dept?' · '+r.dept:''} · ${r.loc||'未設地點'} · ${r.shift||'固定班'}${r.gps?' · GPS '+r.gps:''}</span></div>
+      <div class="meta"><b>${r.name}</b><span>${r.id}${r.dept?' · '+r.dept:''} · ${r.loc||'未設地點'} · ${r.shift||'固定班'}${r.hours?' · '+r.hours+'h':''}${r.gps?' · GPS '+r.gps:''}</span></div>
       <button class="icon-btn" data-edit="${r.id}" title="編輯">&#9998;</button>
       <button class="icon-btn" data-drm="${r.id}" title="刪除">&#10005;</button>
     </div>`).join('') : '<div class="empty">名單是空的。用上方表單新增，或用「匯入名單」從 Excel／CSV 載入。</div>';
@@ -646,7 +662,7 @@ function refreshFormMode(){
 }
 function resetForm(){
   editingId=null;
-  ['rId','rName','rDept','rLoc','rGps'].forEach(id=>document.getElementById(id).value='');
+  ['rId','rName','rDept','rLoc','rGps','rHours'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rShift').value='固定班';
   refreshFormMode();
 }
@@ -659,13 +675,14 @@ function startEdit(id){
   document.getElementById('rLoc').value=r.loc||'';
   document.getElementById('rGps').value=r.gps||'';
   document.getElementById('rShift').value=r.shift||'固定班';
+  document.getElementById('rHours').value=r.hours||'';
   refreshFormMode();
   document.getElementById('rName').focus();
 }
 async function saveEmployee(){
   const id=fval('rId'), name=fval('rName');
   if(!id||!name){ toast('請填員工編號與姓名'); return; }
-  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value};
+  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value,hours:fval('rHours')};
   if(editingId){
     const i=roster.findIndex(x=>x.id===editingId);
     if(i>=0) roster[i]=data;
@@ -699,7 +716,8 @@ function importRosterFile(f){
           dept:String(pickField(row,['部門','dept'])||'').trim(),
           loc:String(pickField(row,['打卡地點','地點','location','loc'])||'').trim(),
           gps:String(pickField(row,['gps','座標'])||'').trim(),
-          shift:(String(pickField(row,['班別','shift'])||'').trim())||'固定班'
+          shift:(String(pickField(row,['班別','shift'])||'').trim())||'固定班',
+          hours:String(pickField(row,['每日時數','時數','工時','hours'])||'').trim()
         });
       });
       if(!list.length){ toast('檔案裡找不到「員工編號 / 姓名」欄位'); return; }
