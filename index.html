@@ -145,7 +145,7 @@
   </div>
   <div>
     <h1>打卡系統</h1>
-    <div class="sub">即時打卡、批次產生紀錄，一鍵匯出成匯入範本格式</div>
+    <div class="sub">即時打卡、批次產生紀錄，一鍵匯出成昇億打卡紀錄格式</div>
   </div>
 </header>
 
@@ -185,7 +185,11 @@
       <label class="f">打卡地點（GPS 關閉時使用）</label>
       <input id="pLoc" placeholder="例如：台北辦公室">
     </div>
-    <label class="switch" style="margin-top:12px"><input type="checkbox" id="pGps" checked> 使用 GPS 定位打卡（記錄座標）</label>
+    <div class="field" style="margin-top:12px">
+      <label class="f">指定打卡縣市（選了就直接用該縣市的 GPS 座標）</label>
+      <select id="pCity"></select>
+    </div>
+    <label class="switch" style="margin-top:12px"><input type="checkbox" id="pGps" checked> 使用 GPS 定位打卡（未指定縣市時才生效）</label>
     <div class="hint" id="pGpsStatus">開啟後，按下打卡會擷取此裝置的 GPS 座標，需允許瀏覽器定位權限。</div>
     <div class="punch-row">
       <button class="punch in" id="btnIn">上班<small>CLOCK IN</small></button>
@@ -224,7 +228,10 @@
     </div>
     <div class="field" style="margin-top:12px">
       <label class="f">GPS 座標（選填，格式：經度,緯度）— 填了就用 GPS 打卡並每筆微調</label>
-      <input id="bGps" placeholder="例如：120.539104,23.509710">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="bGps" placeholder="例如：120.539104,23.509710">
+        <select id="bCity" style="width:auto;flex:none"></select>
+      </div>
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
       <label class="switch"><input type="checkbox" id="bWeekday" checked> 只產生平日（跳過週六、週日）</label>
@@ -250,12 +257,11 @@
   <div class="card">
     <h2>所有紀錄 <span class="tag" id="recCount">0 筆</span></h2>
     <div class="row-actions" style="margin-top:0">
-      <button class="btn primary" id="expXlsx">匯出 Excel（匯入範本）</button>
-      <button class="btn primary" id="expLog">匯出 Excel（Log 紀錄格式）</button>
+      <button class="btn primary" id="expLog">匯出 Excel</button>
       <button class="btn" id="expCsv">匯出 CSV</button>
       <button class="btn ghost-danger" id="clearAll">清空全部</button>
     </div>
-    <div class="hint">「匯入範本」為 7 欄格式，可直接匯入差勤系統；「Log 紀錄格式」比照昇億匯出檔（含部門、上下班打卡方式與地點、GPS 座標）。</div>
+    <div class="hint">匯出為昇億打卡紀錄格式，含「打卡紀錄」工作表（每人每天一列）與「Log 紀錄」工作表（每次打卡一列），欄位與 GPS 座標格式比照昇億匯出檔。</div>
   </div>
   <div class="card">
     <div id="recTableWrap"></div>
@@ -277,7 +283,12 @@
       <div class="field"><label class="f">預設打卡地點</label><input id="rLoc" placeholder="例如：台北辦公室"></div>
     </div>
     <div class="grid g2" style="margin-top:12px">
-      <div class="field"><label class="f">預設 GPS 座標（經度,緯度）</label><input id="rGps" placeholder="例如：120.539104,23.509710"></div>
+      <div class="field"><label class="f">預設 GPS 座標（經度,緯度）</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="rGps" placeholder="例如：120.539104,23.509710">
+          <select id="rCity" style="width:auto;flex:none"></select>
+        </div>
+      </div>
       <div class="field"><label class="f">預設班別</label>
         <select id="rShift"><option>固定班</option><option>早班</option><option>午班</option><option>晚班</option><option>大夜班</option></select>
       </div>
@@ -323,6 +334,21 @@ const HEADERS = [
 /* ---------- state ---------- */
 let roster = [];   // {id,name,dept,loc,gps,shift}
 let editingId = null;
+
+/* ---------- 台灣各縣市市中心 GPS（經度,緯度） ---------- */
+const TW_CITIES=[
+  ['臺北市',121.5637,25.0375],['新北市',121.4657,25.0128],['基隆市',121.7419,25.1310],
+  ['桃園市',121.3009,24.9937],['新竹市',120.9647,24.8039],['新竹縣',121.0132,24.8390],
+  ['苗栗縣',120.8203,24.5651],['臺中市',120.6469,24.1616],['彰化縣',120.5445,24.0755],
+  ['南投縣',120.6853,23.9099],['雲林縣',120.5417,23.7559],['嘉義市',120.4491,23.4801],
+  ['嘉義縣',120.2555,23.4518],['臺南市',120.2270,22.9999],['高雄市',120.3014,22.6273],
+  ['屏東縣',120.4880,22.6690],['宜蘭縣',121.7378,24.7021],['花蓮縣',121.6015,23.9910],
+  ['臺東縣',121.1444,22.7583],['澎湖縣',119.5793,23.5712],['金門縣',118.3171,24.4340],
+  ['連江縣',119.9497,26.1597]
+];
+function cityOptions(ph){ return `<option value="">${ph}</option>`+TW_CITIES.map(c=>`<option value="${c[0]}">${c[0]}</option>`).join(''); }
+function cityLngLat(name){ const c=TW_CITIES.find(x=>x[0]===name); return c?{lng:c[1],lat:c[2]}:null; }
+
 let records = [];  // {rid,empId,name,date,time,cat,loc,shift}
 let currentView = 'punch';
 
@@ -401,6 +427,7 @@ function renderPunch(){
     if(r){ document.getElementById('pLoc').value=r.loc||''; document.getElementById('pShift').value=r.shift||'固定班'; }
   }
   emp.onchange=fillDefaults; fillDefaults();
+  document.getElementById('pCity').innerHTML=cityOptions('—（不指定，用即時定位）');
   clearInterval(clockTimer); tickClock(); clockTimer=setInterval(tickClock,1000);
   document.getElementById('btnIn').onclick=()=>punch('上班','btnIn');
   document.getElementById('btnOut').onclick=()=>punch('下班','btnOut');
@@ -411,13 +438,23 @@ async function punch(cat,btnId){
   if(!r){ toast('請先選擇員工'); return; }
   const b=document.getElementById(btnId);
   let method='手動', lat=null, lng=null, loc=document.getElementById('pLoc').value.trim()||r.loc||'';
-  if(document.getElementById('pGps').checked){
+  const city=cityLngLat(document.getElementById('pCity').value);
+  if(city){
+    lng=city.lng+(Math.random()-.5)*0.006; lat=city.lat+(Math.random()-.5)*0.006;
+    method='GPS'; loc=gpsString(lng,lat);
+    document.getElementById('pGpsStatus').textContent='已使用「'+document.getElementById('pCity').value+'」的 GPS 座標';
+  } else if(document.getElementById('pGps').checked){
     const st=document.getElementById('pGpsStatus'), prev=st.textContent;
     st.textContent='定位中…請稍候'; b.disabled=true;
     const g=await getGPS(); b.disabled=false;
     if(g){ method='GPS'; lat=g.lat; lng=g.lng; loc=gpsString(lng,lat);
       st.textContent='已取得座標 · 精確度約 '+Math.round(g.acc)+' 公尺'; }
-    else{ st.textContent=prev; toast('無法取得 GPS，改用文字地點'); }
+    else{
+      const def=parseGps(r.gps);
+      if(def){ method='GPS'; lat=def.lat; lng=def.lng; loc=gpsString(lng,lat);
+        st.textContent='無法即時定位，已改用員工預設 GPS 座標'; toast('已改用員工預設 GPS 座標',true); }
+      else{ st.textContent=prev; toast('無法取得 GPS，此員工也沒有預設 GPS，改用文字地點'); }
+    }
   }
   const now=new Date();
   records.push({rid:uid(),empId:r.id,name:r.name,date:fmtDate(now),time:fmtTime(now),
@@ -465,6 +502,11 @@ function renderBatch(){
   document.getElementById('bStart').value=s.toISOString().slice(0,10);
   document.getElementById('bEnd').value=t.toISOString().slice(0,10);
   ['bStart','bEnd','bWeekday'].forEach(id=>document.getElementById(id).addEventListener('change',updatePreview));
+  const bCity=document.getElementById('bCity');
+  if(bCity){
+    bCity.innerHTML=cityOptions('縣市帶入…');
+    bCity.onchange=()=>{ const c=cityLngLat(bCity.value); if(c){ document.getElementById('bGps').value=c.lng+','+c.lat; updatePreview(); } };
+  }
   document.getElementById('bGen').onclick=genBatch;
   updatePreview();
 }
@@ -556,7 +598,6 @@ function renderRecords(){
       records=records.filter(x=>x.rid!==b.dataset.del); await saveRecords(); renderRecords();
     });
   }
-  document.getElementById('expXlsx').onclick=exportXlsx;
   document.getElementById('expLog').onclick=exportLogXlsx;
   document.getElementById('expCsv').onclick=exportCsv;
   document.getElementById('clearAll').onclick=async()=>{
@@ -581,27 +622,59 @@ function exportXlsx(){
 }
 function exportCsv(){
   if(!records.length){ toast('沒有可匯出的紀錄'); return; }
-  const esc=v=>/[",\n]/.test(v)?'"'+String(v).replace(/"/g,'""')+'"':v;
-  const flat=HEADERS.map(h=>h.replace(/\n/g,' '));
-  const lines=[flat.map(esc).join(',')].concat(
-    sortRecords().map(r=>[r.empId,r.name,r.date,r.time,r.cat,r.loc||'',r.shift||'固定班'].map(esc).join(',')));
+  const esc=v=>{ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  const lines=buildLogAOA().map(row=>row.map(esc).join(','));
   const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.csv`; a.click();
-  toast('已匯出 CSV',true);
+  a.download=`打卡Log紀錄_${fmtDate(new Date()).replace(/\//g,'')}.csv`; a.click();
+  toast('已匯出 CSV（Log 紀錄格式）',true);
 }
 
-/* ===== Log 紀錄格式匯出（比照昇億匯出檔）===== */
+/* ===== 昇億格式匯出：打卡紀錄（每人每天一列）＋ Log 紀錄（每次打卡一列）===== */
+function deptOf(empId){ const r=roster.find(x=>x.id===empId); return (r&&r.dept)||''; }
+
+// 打卡紀錄工作表（30 欄，上/下班併同一列；打卡地點分列於第 20、24 欄）
+const PIVOT_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
+  "表定上班時間","表定下班時間","休息時間","表定工時","打卡工時","計薪基準工時",
+  "上班打卡時間","遲到","下班打卡時間","早退","出勤異常","提早上班原因",
+  "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因",
+  "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因",
+  "請假時間","請假時數","假別","加班時間","加班時數"];
+function buildPivotAOA(){
+  const D='--', map=new Map();
+  sortRecords().forEach(r=>{
+    const k=r.empId+'|'+r.date;
+    let g=map.get(k);
+    if(!g){ g={empId:r.empId,name:r.name,date:r.date,shift:r.shift||'固定班',in:null,out:null}; map.set(k,g); }
+    if(r.shift) g.shift=r.shift;
+    if(r.cat==='上班'){ if(!g.in || r.time<g.in.time) g.in=r; }
+    else { if(!g.out || r.time>g.out.time) g.out=r; }
+  });
+  const groups=[...map.values()].sort((a,b)=> (a.empId+a.date)<(b.empId+b.date)?-1:1);
+  const aoa=[PIVOT_HEADERS];
+  groups.forEach(g=>{
+    const i=g.in, o=g.out;
+    aoa.push([
+      g.empId, g.name, deptOf(g.empId), g.date, D, g.shift,
+      D, D, D, D, D, D,
+      i?i.time:D, '', o?o.time:D, '', '', D,
+      i?(i.method||'手動'):D, i?(i.loc||D):D, D,
+      D, o?(o.method||'手動'):D, o?(o.loc||D):D, D,
+      D, D, D, D, D
+    ]);
+  });
+  return aoa;
+}
+
+// Log 紀錄工作表（17 欄，每次打卡一列）
 const LOG_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
   "上班打卡時間","下班打卡時間","紀錄備註","提早上班原因",
   "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因",
   "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因"];
-function deptOf(empId){ const r=roster.find(x=>x.id===empId); return (r&&r.dept)||''; }
 function buildLogAOA(){
-  const D='--';
-  const aoa=[LOG_HEADERS];
+  const D='--', aoa=[LOG_HEADERS];
   sortRecords().forEach(r=>{
-    const isIn=r.cat==='上班', m=r.method||'手動', loc=r.loc||'';
+    const isIn=r.cat==='上班', m=r.method==='GPS'?'GPS/業務':(r.method||'手動'), loc=r.loc||'';
     aoa.push([
       r.empId, r.name, deptOf(r.empId), r.date, D, r.shift||'固定班',
       isIn?r.time:D, isIn?D:r.time, '', D,
@@ -611,17 +684,27 @@ function buildLogAOA(){
   });
   return aoa;
 }
+function dateRange(){
+  const ds=sortRecords().map(r=>r.date);
+  return ds.length?(ds[0]+'-'+ds[ds.length-1]).replace(/\//g,'.'):'';
+}
 function exportLogXlsx(){
   if(!records.length){ toast('沒有可匯出的紀錄'); return; }
-  const ws=XLSX.utils.aoa_to_sheet(buildLogAOA());
-  ws['!cols']=[{wch:12},{wch:10},{wch:14},{wch:12},{wch:14},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:12},{wch:30},{wch:22},{wch:12},{wch:12},{wch:30},{wch:22}];
-  const ds=sortRecords().map(r=>r.date);
-  const range=ds.length?(ds[0]+'-'+ds[ds.length-1]).replace(/\//g,'.'):'';
-  let sheetName='【'+range+'_Log 紀錄】'; if(sheetName.length>31) sheetName='Log 紀錄';
+  const range=dateRange();
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,sheetName);
-  XLSX.writeFile(wb,`打卡Log紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
-  toast('已匯出 Log 紀錄格式',true);
+
+  const ws1=XLSX.utils.aoa_to_sheet(buildPivotAOA());
+  ws1['!cols']=[{wch:12},{wch:10},{wch:14},{wch:12},{wch:14},{wch:9},{wch:11},{wch:11},{wch:9},{wch:9},{wch:10},{wch:11},{wch:11},{wch:7},{wch:11},{wch:7},{wch:14},{wch:12},{wch:12},{wch:30},{wch:22},{wch:12},{wch:12},{wch:30},{wch:22},{wch:9},{wch:9},{wch:7},{wch:9},{wch:9}];
+  let n1='【'+range+'_打卡紀錄】'; if(n1.length>31) n1='打卡紀錄';
+  XLSX.utils.book_append_sheet(wb,ws1,n1);
+
+  const ws2=XLSX.utils.aoa_to_sheet(buildLogAOA());
+  ws2['!cols']=[{wch:12},{wch:10},{wch:14},{wch:12},{wch:14},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:12},{wch:30},{wch:22},{wch:12},{wch:12},{wch:30},{wch:22}];
+  let n2='【'+range+'_Log 紀錄】'; if(n2.length>31) n2='Log 紀錄';
+  XLSX.utils.book_append_sheet(wb,ws2,n2);
+
+  XLSX.writeFile(wb,`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
+  toast('已匯出昇億格式（打卡紀錄＋Log）',true);
 }
 
 /* ===== ROSTER ===== */
@@ -650,6 +733,11 @@ function renderRoster(){
   imp.onclick=()=>file.click();
   file.onchange=e=>{ const f=e.target.files[0]; if(f) importRosterFile(f); file.value=''; };
 
+  const rCity=document.getElementById('rCity');
+  if(rCity){
+    rCity.innerHTML=cityOptions('縣市帶入…');
+    rCity.onchange=()=>{ const c=cityLngLat(rCity.value); if(c) document.getElementById('rGps').value=c.lng+','+c.lat; };
+  }
   refreshFormMode();
 }
 function fval(id){ return document.getElementById(id).value.trim(); }
