@@ -257,11 +257,20 @@
   <div class="card">
     <h2>所有紀錄 <span class="tag" id="recCount">0 筆</span></h2>
     <div class="row-actions" style="margin-top:0">
-      <button class="btn primary" id="expLog">匯出 Excel</button>
+      <button class="btn primary" id="expXlsx">匯出 Excel（打卡之星匯入格式）</button>
+      <button class="btn primary" id="expLog">匯出 Excel（月報表留存）</button>
       <button class="btn" id="expCsv">匯出 CSV</button>
       <button class="btn ghost-danger" id="clearAll">清空全部</button>
     </div>
-    <div class="hint">匯出為昇億打卡紀錄格式，含「打卡紀錄」工作表（每人每天一列）與「Log 紀錄」工作表（每次打卡一列），欄位與 GPS 座標格式比照昇億匯出檔。</div>
+    <div class="hint">「打卡之星匯入格式」為 7 欄、每筆一列，供匯入打卡之星系統；「月報表留存」為昇億雙工作表報表，供每月存檔。GPS 座標會放在打卡地點欄。</div>
+  </div>
+  <div class="card">
+    <h2>匯入打卡紀錄 <span class="tag">Excel</span></h2>
+    <div class="hint" style="margin-top:0">上傳打卡資料檔載入到系統（會取代目前紀錄），支援 7 欄匯入範本格式或昇億 Log／打卡紀錄格式。打卡地點若為「GPS (經度，緯度)」會自動辨識為 GPS。</div>
+    <div class="row-actions">
+      <button class="btn primary" id="impRecBtn">選擇檔案匯入</button>
+      <input type="file" id="impRecFile" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>
   </div>
   <div class="card">
     <div id="recTableWrap"></div>
@@ -598,7 +607,10 @@ function renderRecords(){
       records=records.filter(x=>x.rid!==b.dataset.del); await saveRecords(); renderRecords();
     });
   }
+  document.getElementById('expXlsx').onclick=exportXlsx;
   document.getElementById('expLog').onclick=exportLogXlsx;
+  const irb=document.getElementById('impRecBtn'), irf=document.getElementById('impRecFile');
+  if(irb){ irb.onclick=()=>irf.click(); irf.onchange=e=>{ const f=e.target.files[0]; if(f) importRecordsFile(f); irf.value=''; }; }
   document.getElementById('expCsv').onclick=exportCsv;
   document.getElementById('clearAll').onclick=async()=>{
     if(!records.length){ toast('目前沒有紀錄'); return; }
@@ -811,6 +823,71 @@ function importRosterFile(f){
       if(!list.length){ toast('檔案裡找不到「員工編號 / 姓名」欄位'); return; }
       if(!confirm('將匯入 '+list.length+' 位員工，並「取代」目前名單（不影響打卡紀錄），確定嗎？')) return;
       roster=list; saveRoster(); resetForm(); renderRoster(); toast('已匯入 '+list.length+' 位員工',true);
+    }catch(err){ toast('讀取檔案失敗，請確認是 Excel 或 CSV 檔'); }
+  };
+  reader.readAsArrayBuffer(f);
+}
+function normDate(v){
+  if(v==null) return '';
+  if(v instanceof Date) return v.getFullYear()+'/'+pad(v.getMonth()+1)+'/'+pad(v.getDate());
+  const s=String(v).trim().replace(/-/g,'/');
+  const m=s.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? m[1]+'/'+pad(+m[2])+'/'+pad(+m[3]) : s;
+}
+function normTime(v){
+  if(v==null) return '';
+  if(v instanceof Date) return pad(v.getHours())+':'+pad(v.getMinutes());
+  const m=String(v).trim().match(/(\d{1,2}):(\d{2})/);
+  return m ? pad(+m[1])+':'+m[2] : String(v).trim();
+}
+function locToRec(locStr){
+  const g=parseGps(locStr);
+  if(g) return {loc:gpsString(g.lng,g.lat),method:'GPS',lat:g.lat,lng:g.lng};
+  return {loc:String(locStr||'').trim(),method:'手動',lat:null,lng:null};
+}
+function importRecordsFile(f){
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      let out=[];
+      for(const sn of wb.SheetNames){
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{raw:false,defval:''});
+        if(!rows.length) continue;
+        const keys=Object.keys(rows[0]).map(k=>String(k).replace(/\s/g,''));
+        const hasCat=keys.some(k=>k.includes('類別'));
+        const hasIn=keys.some(k=>k.includes('上班打卡時間'));
+        const tmp=[];
+        if(hasCat){
+          rows.forEach(row=>{
+            const id=String(pickField(row,['員工編號','工號','編號','empid','id'])||'').trim();
+            const date=normDate(pickField(row,['打卡日期','日期','date']));
+            const time=normTime(pickField(row,['打卡時間','時間','time']));
+            const cat=String(pickField(row,['類別','cat'])||'').trim();
+            if(!id||!date||!time||(cat!=='上班'&&cat!=='下班')) return;
+            const L=locToRec(pickField(row,['打卡地點','地點','location','loc']));
+            tmp.push({rid:uid(),empId:id,name:String(pickField(row,['姓名','name'])||'').trim(),
+              date,time,cat,loc:L.loc,method:L.method,lat:L.lat,lng:L.lng,
+              shift:(String(pickField(row,['班別','shift'])||'').trim())||'固定班'});
+          });
+        } else if(hasIn){
+          rows.forEach(row=>{
+            const id=String(pickField(row,['員工編號'])||'').trim();
+            const name=String(pickField(row,['姓名'])||'').trim();
+            const date=normDate(pickField(row,['打卡日期']));
+            const shift=(String(pickField(row,['班別'])||'').trim())||'固定班';
+            if(!id||!date) return;
+            const inT=normTime(pickField(row,['上班打卡時間']));
+            const outT=normTime(pickField(row,['下班打卡時間']));
+            if(inT && inT!=='--'){ const L=locToRec(pickField(row,['上班打卡地點'])); tmp.push({rid:uid(),empId:id,name,date,time:inT,cat:'上班',loc:L.loc,method:L.method,lat:L.lat,lng:L.lng,shift}); }
+            if(outT && outT!=='--'){ const L=locToRec(pickField(row,['下班打卡地點'])); tmp.push({rid:uid(),empId:id,name,date,time:outT,cat:'下班',loc:L.loc,method:L.method,lat:L.lat,lng:L.lng,shift}); }
+          });
+        }
+        if(tmp.length){ out=tmp; break; }
+      }
+      if(!out.length){ toast('檔案裡找不到可辨識的打卡資料'); return; }
+      if(!confirm('將匯入 '+out.length+' 筆打卡紀錄，並「取代」目前紀錄，確定嗎？')) return;
+      records=out; saveRecords(); renderRecords(); toast('已匯入 '+out.length+' 筆打卡紀錄',true);
     }catch(err){ toast('讀取檔案失敗，請確認是 Excel 或 CSV 檔'); }
   };
   reader.readAsArrayBuffer(f);
