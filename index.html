@@ -649,8 +649,8 @@ function deptOf(empId){ const r=roster.find(x=>x.id===empId); return (r&&r.dept)
 const PIVOT_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
   "表定上班時間","表定下班時間","休息時間","表定工時","打卡工時","計薪基準工時",
   "上班打卡時間","遲到","下班打卡時間","早退","出勤異常","提早上班原因",
-  "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因",
-  "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因",
+  "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因","上班打卡設備","上班打卡設備異常",
+  "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因","下班打卡設備","下班打卡設備異常",
   "請假時間","請假時數","假別","加班時間","加班時數"];
 function buildPivotAOA(){
   const D='--', map=new Map();
@@ -663,15 +663,17 @@ function buildPivotAOA(){
     else { if(!g.out || r.time>g.out.time) g.out=r; }
   });
   const groups=[...map.values()].sort((a,b)=> (a.empId+a.date)<(b.empId+b.date)?-1:1);
+  const DEV='mobile(Apple, iOS, Line)';
   const aoa=[PIVOT_HEADERS];
   groups.forEach(g=>{
     const i=g.in, o=g.out;
+    const worked=(i&&o)?durationHMS(i.time,o.time):D;
     aoa.push([
       g.empId, g.name, deptOf(g.empId), g.date, D, g.shift,
-      D, D, D, D, D, D,
+      D, D, D, D, worked, D,
       i?i.time:D, '', o?o.time:D, '', '', D,
-      i?(i.method||'手動'):D, i?(i.loc||D):D, D,
-      D, o?(o.method||'手動'):D, o?(o.loc||D):D, D,
+      i?(i.method||'手動'):D, i?(i.loc||D):D, D, i?DEV:D, D,
+      D, o?(o.method||'手動'):D, o?(o.loc||D):D, D, o?DEV:D, D,
       D, D, D, D, D
     ]);
   });
@@ -681,17 +683,17 @@ function buildPivotAOA(){
 // Log 紀錄工作表（17 欄，每次打卡一列）
 const LOG_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
   "上班打卡時間","下班打卡時間","紀錄備註","提早上班原因",
-  "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因",
-  "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因"];
+  "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因","上班打卡設備","上班打卡設備異常",
+  "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因","下班打卡設備","下班打卡設備異常"];
 function buildLogAOA(){
-  const D='--', aoa=[LOG_HEADERS];
+  const D='--', DEV='mobile(Apple, iOS, Line)', aoa=[LOG_HEADERS];
   sortRecords().forEach(r=>{
     const isIn=r.cat==='上班', m=r.method==='GPS'?'GPS/業務':(r.method||'手動'), loc=r.loc||'';
     aoa.push([
       r.empId, r.name, deptOf(r.empId), r.date, D, r.shift||'固定班',
       isIn?r.time:D, isIn?D:r.time, '', D,
-      isIn?m:D, isIn?loc:D, D, D,
-      isIn?D:m, isIn?D:loc, D
+      isIn?m:D, isIn?loc:D, D, isIn?DEV:D, D,
+      D, isIn?D:m, isIn?D:loc, D, isIn?D:DEV, D
     ]);
   });
   return aoa;
@@ -700,25 +702,60 @@ function dateRange(){
   const ds=sortRecords().map(r=>r.date);
   return ds.length?(ds[0]+'-'+ds[ds.length-1]).replace(/\//g,'.'):'';
 }
+function durationHMS(t1,t2){
+  const [h1,m1]=t1.split(':').map(Number),[h2,m2]=t2.split(':').map(Number);
+  let mm=(h2*60+m2)-(h1*60+m1); if(mm<0) mm+=1440;
+  return pad(Math.floor(mm/60))+':'+pad(mm%60)+':00';
+}
+const STAT_HEADERS=["員工編號","姓名","部門","統計開始日","統計結束日","排班天數","上班天數","表定總工時","打卡總工時","計薪基準總工時","請假天數","請假總時數","遲到、早退、曠職天數","遲到總分鐘數","早退總分鐘數","曠職總分鐘數","加班總時數","員工到職日","離職最後工作日","特休該月到期時數","補休該月到期時數"];
+function buildStatsAOA(){
+  const D='--';
+  const ds=sortRecords().map(r=>r.date);
+  const start=ds.length?ds[0]:'', end=ds.length?ds[ds.length-1]:'';
+  const byEmp=new Map();
+  sortRecords().forEach(r=>{
+    let e=byEmp.get(r.empId);
+    if(!e){ e={empId:r.empId,name:r.name,days:new Map()}; byEmp.set(r.empId,e); }
+    let day=e.days.get(r.date); if(!day){ day={in:null,out:null}; e.days.set(r.date,day); }
+    if(r.cat==='上班'){ if(!day.in||r.time<day.in) day.in=r.time; }
+    else { if(!day.out||r.time>day.out) day.out=r.time; }
+  });
+  const aoa=[STAT_HEADERS];
+  [...byEmp.values()].sort((a,b)=>a.empId<b.empId?-1:1).forEach(e=>{
+    let workDays=0, totalMin=0;
+    e.days.forEach(day=>{
+      if(day.in||day.out) workDays++;
+      if(day.in&&day.out){ const [h1,m1]=day.in.split(':').map(Number),[h2,m2]=day.out.split(':').map(Number); let mm=(h2*60+m2)-(h1*60+m1); if(mm<0)mm+=1440; totalMin+=mm; }
+    });
+    const th=pad(Math.floor(totalMin/60))+':'+pad(totalMin%60)+':00';
+    aoa.push([e.empId,e.name,deptOf(e.empId),start,end,D,workDays,D,th,D,D,D,D,D,D,D,D,D,D,D,D]);
+  });
+  return aoa;
+}
 function exportLogXlsx(){
   if(!records.length){ toast('沒有可匯出的紀錄'); return; }
   const range=dateRange();
+  const wcol=(n,wide)=>Array.from({length:n},(_,i)=>({wch:wide.includes(i)?36:12}));
   const wb=XLSX.utils.book_new();
 
-  const ws1=XLSX.utils.aoa_to_sheet(buildPivotAOA());
-  ws1['!cols']=[{wch:12},{wch:10},{wch:14},{wch:12},{wch:14},{wch:9},{wch:11},{wch:11},{wch:9},{wch:9},{wch:10},{wch:11},{wch:11},{wch:7},{wch:11},{wch:7},{wch:14},{wch:12},{wch:12},{wch:30},{wch:22},{wch:12},{wch:12},{wch:30},{wch:22},{wch:9},{wch:9},{wch:7},{wch:9},{wch:9}];
-  let n1='【'+range+'_打卡紀錄】'; if(n1.length>31) n1='打卡紀錄';
+  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA());
+  ws1['!cols']=wcol(21,[11,17]);
+  let n1='【'+range+'_Log 紀錄】'; if(n1.length>31) n1='Log 紀錄';
   XLSX.utils.book_append_sheet(wb,ws1,n1);
 
-  const ws2=XLSX.utils.aoa_to_sheet(buildLogAOA());
-  ws2['!cols']=[{wch:12},{wch:10},{wch:14},{wch:12},{wch:14},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:12},{wch:30},{wch:22},{wch:12},{wch:12},{wch:30},{wch:22}];
-  let n2='【'+range+'_Log 紀錄】'; if(n2.length>31) n2='Log 紀錄';
+  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA());
+  ws2['!cols']=wcol(34,[19,25]);
+  let n2='【'+range+'_打卡紀錄】'; if(n2.length>31) n2='打卡紀錄';
   XLSX.utils.book_append_sheet(wb,ws2,n2);
 
-  XLSX.writeFile(wb,`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
-  toast('已匯出昇億格式（打卡紀錄＋Log）',true);
-}
+  const ws3=XLSX.utils.aoa_to_sheet(buildStatsAOA());
+  ws3['!cols']=wcol(21,[]);
+  let n3='【'+range+'_統計數據】'; if(n3.length>31) n3='統計數據';
+  XLSX.utils.book_append_sheet(wb,ws3,n3);
 
+  XLSX.writeFile(wb,`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
+  toast('已匯出月報表（Log＋打卡紀錄＋統計）',true);
+}
 /* ===== ROSTER ===== */
 function renderRoster(){
   document.getElementById('rosterCount').textContent=roster.length+' 人';
