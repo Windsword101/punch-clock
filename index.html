@@ -259,6 +259,7 @@
     <div class="row-actions" style="margin-top:0">
       <button class="btn primary" id="expXlsx">匯出 Excel（打卡之星匯入格式）</button>
       <button class="btn primary" id="expLog">匯出 Excel（月報表留存）</button>
+      <button class="btn primary" id="expByDept">依部門分別匯出</button>
       <button class="btn" id="expCsv">匯出 CSV</button>
       <button class="btn ghost-danger" id="clearAll">清空全部</button>
     </div>
@@ -585,8 +586,8 @@ async function genBatch(){
 }
 
 /* ===== RECORDS ===== */
-function sortRecords(){
-  return records.slice().sort((a,b)=> (a.date+a.time+a.empId) < (b.date+b.time+b.empId) ? -1 : 1);
+function sortRecords(list){
+  return (list||records).slice().sort((a,b)=> (a.date+a.time+a.empId) < (b.date+b.time+b.empId) ? -1 : 1);
 }
 function renderRecords(){
   document.getElementById('recCount').textContent=records.length+' 筆';
@@ -609,6 +610,7 @@ function renderRecords(){
   }
   document.getElementById('expXlsx').onclick=exportXlsx;
   document.getElementById('expLog').onclick=exportLogXlsx;
+  document.getElementById('expByDept').onclick=exportByDept;
   const irb=document.getElementById('impRecBtn'), irf=document.getElementById('impRecFile');
   if(irb){ irb.onclick=()=>irf.click(); irf.onchange=e=>{ const f=e.target.files[0]; if(f) importRecordsFile(f); irf.value=''; }; }
   document.getElementById('expCsv').onclick=exportCsv;
@@ -652,9 +654,9 @@ const PIVOT_HEADERS = ["員工編號","姓名","部門","打卡日期","日期�
   "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因","上班打卡設備","上班打卡設備異常",
   "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因","下班打卡設備","下班打卡設備異常",
   "請假時間","請假時數","假別","加班時間","加班時數"];
-function buildPivotAOA(){
+function buildPivotAOA(recs){
   const D='--', map=new Map();
-  sortRecords().forEach(r=>{
+  sortRecords(recs).forEach(r=>{
     const k=r.empId+'|'+r.date;
     let g=map.get(k);
     if(!g){ g={empId:r.empId,name:r.name,date:r.date,shift:r.shift||'固定班',in:null,out:null}; map.set(k,g); }
@@ -685,9 +687,9 @@ const LOG_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類�
   "上班打卡時間","下班打卡時間","紀錄備註","提早上班原因",
   "上班打卡方式","上班打卡地點","上班地點異常，不在範圍內的原因","上班打卡設備","上班打卡設備異常",
   "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因","下班打卡設備","下班打卡設備異常"];
-function buildLogAOA(){
+function buildLogAOA(recs){
   const D='--', DEV='mobile(Apple, iOS, Line)', aoa=[LOG_HEADERS];
-  sortRecords().forEach(r=>{
+  sortRecords(recs).forEach(r=>{
     const isIn=r.cat==='上班', m=r.method==='GPS'?'GPS/業務':(r.method||'手動'), loc=r.loc||'';
     aoa.push([
       r.empId, r.name, deptOf(r.empId), r.date, D, r.shift||'固定班',
@@ -698,8 +700,8 @@ function buildLogAOA(){
   });
   return aoa;
 }
-function dateRange(){
-  const ds=sortRecords().map(r=>r.date);
+function dateRange(recs){
+  const ds=sortRecords(recs).map(r=>r.date);
   return ds.length?(ds[0]+'-'+ds[ds.length-1]).replace(/\//g,'.'):'';
 }
 function durationHMS(t1,t2){
@@ -708,12 +710,12 @@ function durationHMS(t1,t2){
   return pad(Math.floor(mm/60))+':'+pad(mm%60)+':00';
 }
 const STAT_HEADERS=["員工編號","姓名","部門","統計開始日","統計結束日","排班天數","上班天數","表定總工時","打卡總工時","計薪基準總工時","請假天數","請假總時數","遲到、早退、曠職天數","遲到總分鐘數","早退總分鐘數","曠職總分鐘數","加班總時數","員工到職日","離職最後工作日","特休該月到期時數","補休該月到期時數"];
-function buildStatsAOA(){
+function buildStatsAOA(recs){
   const D='--';
-  const ds=sortRecords().map(r=>r.date);
+  const ds=sortRecords(recs).map(r=>r.date);
   const start=ds.length?ds[0]:'', end=ds.length?ds[ds.length-1]:'';
   const byEmp=new Map();
-  sortRecords().forEach(r=>{
+  sortRecords(recs).forEach(r=>{
     let e=byEmp.get(r.empId);
     if(!e){ e={empId:r.empId,name:r.name,days:new Map()}; byEmp.set(r.empId,e); }
     let day=e.days.get(r.date); if(!day){ day={in:null,out:null}; e.days.set(r.date,day); }
@@ -732,31 +734,35 @@ function buildStatsAOA(){
   });
   return aoa;
 }
+function buildWorkbook(recs){
+  const range=dateRange(recs);
+  const wcol=(n,wide)=>Array.from({length:n},(_,i)=>({wch:wide.includes(i)?36:12}));
+  const nm=(base)=>{ const full='【'+range+'_'+base+'】'; return full.length>31?base:full; };
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA(recs));   ws1['!cols']=wcol(21,[11,17]); XLSX.utils.book_append_sheet(wb,ws1,nm('Log 紀錄'));
+  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA(recs)); ws2['!cols']=wcol(34,[19,25]); XLSX.utils.book_append_sheet(wb,ws2,nm('打卡紀錄'));
+  const ws3=XLSX.utils.aoa_to_sheet(buildStatsAOA(recs)); ws3['!cols']=wcol(21,[]);      XLSX.utils.book_append_sheet(wb,ws3,nm('統計數據'));
+  return wb;
+}
 function exportLogXlsx(){
   if(!records.length){ toast('沒有可匯出的紀錄'); return; }
-  const range=dateRange();
-  const wcol=(n,wide)=>Array.from({length:n},(_,i)=>({wch:wide.includes(i)?36:12}));
-  const wb=XLSX.utils.book_new();
-
-  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA());
-  ws1['!cols']=wcol(21,[11,17]);
-  let n1='【'+range+'_Log 紀錄】'; if(n1.length>31) n1='Log 紀錄';
-  XLSX.utils.book_append_sheet(wb,ws1,n1);
-
-  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA());
-  ws2['!cols']=wcol(34,[19,25]);
-  let n2='【'+range+'_打卡紀錄】'; if(n2.length>31) n2='打卡紀錄';
-  XLSX.utils.book_append_sheet(wb,ws2,n2);
-
-  const ws3=XLSX.utils.aoa_to_sheet(buildStatsAOA());
-  ws3['!cols']=wcol(21,[]);
-  let n3='【'+range+'_統計數據】'; if(n3.length>31) n3='統計數據';
-  XLSX.utils.book_append_sheet(wb,ws3,n3);
-
-  XLSX.writeFile(wb,`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
+  XLSX.writeFile(buildWorkbook(records),`打卡紀錄_${fmtDate(new Date()).replace(/\//g,'')}.xlsx`);
   toast('已匯出月報表（Log＋打卡紀錄＋統計）',true);
 }
-/* ===== ROSTER ===== */
+function exportByDept(){
+  if(!records.length){ toast('沒有可匯出的紀錄'); return; }
+  const groups=new Map();
+  records.forEach(r=>{ const d=deptOf(r.empId)||'未分部門'; if(!groups.has(d)) groups.set(d,[]); groups.get(d).push(r); });
+  const today=fmtDate(new Date()).replace(/\//g,'');
+  let i=0, names=[...groups.keys()];
+  const run=()=>{
+    if(i>=names.length){ toast('已依部門匯出 '+names.length+' 個檔案',true); return; }
+    const d=names[i++];
+    XLSX.writeFile(buildWorkbook(groups.get(d)),`打卡紀錄_${d}_${today}.xlsx`);
+    setTimeout(run,400);   // 間隔觸發，避免瀏覽器擋多檔下載
+  };
+  run();
+}/* ===== ROSTER ===== */
 function renderRoster(){
   document.getElementById('rosterCount').textContent=roster.length+' 人';
   const list=document.getElementById('rosterList');
