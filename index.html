@@ -2,6 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>打卡系統</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -734,14 +735,27 @@ function buildStatsAOA(recs){
   });
   return aoa;
 }
+const _CG='FFD9D9D9', _CB='FFC9DAF8', _CN='FFD9EAD3', _CP='FFFFCCCC';
+const COLOR_LOG=[_CG,_CG,_CG,_CG,_CG,_CG,_CB,_CN,_CG,_CB,_CB,_CB,_CB,_CB,_CB,_CN,_CN,_CN,_CN,_CN,_CN];
+const COLOR_PIVOT=[_CG,_CG,_CG,_CG,_CG,_CG,_CG,_CG,_CG,_CG,_CG,_CG,_CB,_CB,_CN,_CN,_CG,_CB,_CB,_CB,_CB,_CB,_CB,_CN,_CN,_CN,_CN,_CN,_CN,_CP,_CP,_CP,_CP,_CP];
+const COLOR_STAT=Array(21).fill(_CG);
+function colorHeader(ws,colors){
+  const bd={style:'thin',color:{rgb:'FFBBBBBB'}};
+  colors.forEach((rgb,c)=>{
+    const ref=XLSX.utils.encode_cell({r:0,c});
+    if(ws[ref]) ws[ref].s={ fill:{patternType:'solid',fgColor:{rgb}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+      border:{top:bd,bottom:bd,left:bd,right:bd} };
+  });
+}
 function buildWorkbook(recs){
   const range=dateRange(recs);
   const wcol=(n,wide)=>Array.from({length:n},(_,i)=>({wch:wide.includes(i)?36:12}));
   const nm=(base)=>{ const full='【'+range+'_'+base+'】'; return full.length>31?base:full; };
   const wb=XLSX.utils.book_new();
-  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA(recs));   ws1['!cols']=wcol(21,[11,17]); XLSX.utils.book_append_sheet(wb,ws1,nm('Log 紀錄'));
-  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA(recs)); ws2['!cols']=wcol(34,[19,25]); XLSX.utils.book_append_sheet(wb,ws2,nm('打卡紀錄'));
-  const ws3=XLSX.utils.aoa_to_sheet(buildStatsAOA(recs)); ws3['!cols']=wcol(21,[]);      XLSX.utils.book_append_sheet(wb,ws3,nm('統計數據'));
+  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA(recs));   ws1['!cols']=wcol(21,[11,17]); colorHeader(ws1,COLOR_LOG);   XLSX.utils.book_append_sheet(wb,ws1,nm('Log 紀錄'));
+  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA(recs)); ws2['!cols']=wcol(34,[19,25]); colorHeader(ws2,COLOR_PIVOT); XLSX.utils.book_append_sheet(wb,ws2,nm('打卡紀錄'));
+  const ws3=XLSX.utils.aoa_to_sheet(buildStatsAOA(recs)); ws3['!cols']=wcol(21,[]);      colorHeader(ws3,COLOR_STAT);  XLSX.utils.book_append_sheet(wb,ws3,nm('統計數據'));
   return wb;
 }
 function exportLogXlsx(){
