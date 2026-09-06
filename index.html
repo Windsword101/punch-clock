@@ -236,7 +236,8 @@
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
       <label class="switch"><input type="checkbox" id="bWeekday" checked> 只產生平日（跳過週六、週日）</label>
-      <label class="switch"><input type="checkbox" id="bByHours"> 下班時間 = 上班時間 + 各員工「每日時數」（未設定者用上方下班時間）</label>
+      <div class="switch"><input type="checkbox" id="bByHours" checked> 下班時間 = 上班時間 +
+        <input type="number" id="bHoursGlobal" value="8" min="0" step="0.5" style="width:70px;margin:0 6px"> 小時工時（避免超時；員工若有設「每日時數」則以個人為準）</div>
       <div class="switch"><input type="checkbox" id="bJitter"> 時間加入隨機誤差 ±
         <input type="number" id="bJitAmt" value="10" min="0" style="width:72px;margin:0 6px">
         <select id="bJitUnit" style="width:auto"><option>分鐘</option><option>小時</option></select></div>
@@ -569,13 +570,14 @@ async function genBatch(){
     return {rid:uid(),empId:r.id,name:r.name,date:ds,time:t,cat,loc:locOv||r.loc||'',method:'手動',lat:null,lng:null,shift:sh};
   };
   const byHours=document.getElementById('bByHours').checked;
+  const globalHours=parseFloat(document.getElementById('bHoursGlobal').value);
   let added=0;
   eachDay(d=>{
     const ds=fmtDate(d);
     ids.forEach(id=>{
       const r=roster.find(x=>x.id===id); if(!r) return;
       const tin=jit?jitter(inT):inT;
-      const hrs=parseFloat(r.hours);
+      const hrs=parseFloat(r.hours)||globalHours;
       const tout=(byHours && hrs>0) ? addMinutes(tin, hrs*60) : (jit?jitter(outT):outT);
       records.push(rec(ds,tin,'上班',r));
       records.push(rec(ds,tout,'下班',r));
