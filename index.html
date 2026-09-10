@@ -759,13 +759,28 @@ function colorHeader(ws,colors){
       border:{top:bd,bottom:bd,left:bd,right:bd} };
   });
 }
+function linkifyGPS(ws, cols){
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let r=1; r<=range.e.r; r++){
+    cols.forEach(c=>{
+      const ref=XLSX.utils.encode_cell({r,c}), cell=ws[ref];
+      if(cell && typeof cell.v==='string' && cell.v.indexOf('GPS (')===0){
+        const g=parseGps(cell.v);
+        if(g){
+          cell.l={ Target:'https://www.google.com/maps?q='+g.lat+','+g.lng, Tooltip:'在地圖開啟' };
+          cell.s={ font:{ color:{rgb:'FF0563C1'}, underline:true } };
+        }
+      }
+    });
+  }
+}
 function buildWorkbook(recs){
   const range=dateRange(recs);
   const wcol=(n,wide)=>Array.from({length:n},(_,i)=>({wch:wide.includes(i)?36:12}));
   const nm=(base)=>{ const full='【'+range+'_'+base+'】'; return full.length>31?base:full; };
   const wb=XLSX.utils.book_new();
-  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA(recs));   ws1['!cols']=wcol(21,[11,17]); colorHeader(ws1,COLOR_LOG);   XLSX.utils.book_append_sheet(wb,ws1,nm('Log 紀錄'));
-  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA(recs)); ws2['!cols']=wcol(34,[19,25]); colorHeader(ws2,COLOR_PIVOT); XLSX.utils.book_append_sheet(wb,ws2,nm('打卡紀錄'));
+  const ws1=XLSX.utils.aoa_to_sheet(buildLogAOA(recs));   ws1['!cols']=wcol(21,[11,17]); colorHeader(ws1,COLOR_LOG);   linkifyGPS(ws1,[11,17]); XLSX.utils.book_append_sheet(wb,ws1,nm('Log 紀錄'));
+  const ws2=XLSX.utils.aoa_to_sheet(buildPivotAOA(recs)); ws2['!cols']=wcol(34,[19,25]); colorHeader(ws2,COLOR_PIVOT); linkifyGPS(ws2,[19,25]); XLSX.utils.book_append_sheet(wb,ws2,nm('打卡紀錄'));
   const ws3=XLSX.utils.aoa_to_sheet(buildStatsAOA(recs)); ws3['!cols']=wcol(21,[]);      colorHeader(ws3,COLOR_STAT);  XLSX.utils.book_append_sheet(wb,ws3,nm('統計數據'));
   return wb;
 }
