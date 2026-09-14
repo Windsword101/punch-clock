@@ -308,7 +308,7 @@
     </div>
     <div class="grid g2" style="margin-top:12px">
       <div class="field"><label class="f">每日上班時數（小時）</label><input id="rHours" type="number" min="0" step="0.5" placeholder="例如：8"></div>
-      <div class="field"></div>
+      <div class="field"><label class="f">到職日</label><input id="rHire" type="date"></div>
     </div>
     <div class="row-actions">
       <button class="btn primary" id="rAdd">加入名單</button>
@@ -657,6 +657,7 @@ function exportCsv(){
 
 /* ===== 昇億格式匯出：打卡紀錄（每人每天一列）＋ Log 紀錄（每次打卡一列）===== */
 function deptOf(empId){ const r=roster.find(x=>x.id===empId); return (r&&r.dept)||''; }
+function hireOf(empId){ const r=roster.find(x=>x.id===empId); return r&&r.hire?normDate(r.hire):'--'; }
 
 // 打卡紀錄工作表（30 欄，上/下班併同一列；打卡地點分列於第 20、24 欄）
 const PIVOT_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
@@ -685,8 +686,8 @@ function buildPivotAOA(recs){
       g.empId, g.name, deptOf(g.empId), g.date, RPT_DATECAT, RPT_SHIFT,
       D, D, D, D, worked, D,
       i?i.time:D, '', o?o.time:D, '', '', i?RPT_EARLY:D,
-      i?(i.method||'手動'):D, i?(i.loc||D):D, D, i?DEV:D, D,
-      D, o?(o.method||'手動'):D, o?(o.loc||D):D, D, o?DEV:D, D,
+      i?(i.method==='GPS'?'GPS/業務':(i.method||'手動')):D, i?(i.loc||D):D, '', i?DEV:D, D,
+      '', o?(o.method==='GPS'?'GPS/業務':(o.method||'手動')):D, o?(o.loc||D):D, '', o?DEV:D, D,
       D, D, D, D, D
     ]);
   });
@@ -706,8 +707,8 @@ function buildLogAOA(recs){
     aoa.push([
       r.empId, r.name, deptOf(r.empId), r.date, RPT_DATECAT, RPT_SHIFT,
       isIn?r.time:D, isIn?D:r.time, '', isIn?RPT_EARLY:D,
-      isIn?m:D, isIn?loc:D, D, isIn?DEV:D, D,
-      D, isIn?D:m, isIn?D:loc, D, isIn?D:DEV, D
+      isIn?m:D, isIn?loc:D, '', isIn?DEV:D, D,
+      '', isIn?D:m, isIn?D:loc, '', isIn?D:DEV, D
     ]);
   });
   return aoa;
@@ -742,7 +743,7 @@ function buildStatsAOA(recs){
       if(day.in&&day.out){ const [h1,m1]=day.in.split(':').map(Number),[h2,m2]=day.out.split(':').map(Number); let mm=(h2*60+m2)-(h1*60+m1); if(mm<0)mm+=1440; totalMin+=mm; }
     });
     const th=pad(Math.floor(totalMin/60))+':'+pad(totalMin%60)+':00';
-    aoa.push([e.empId,e.name,deptOf(e.empId),start,end,D,workDays,D,th,D,D,D,D,D,D,D,D,D,D,D,D]);
+    aoa.push([e.empId,e.name,deptOf(e.empId),start,end,0,workDays,'00:00:00',th,'00:00:00',0,'00:00:00',0,'00:00:00','00:00:00','00:00:00','00:00:00',hireOf(e.empId),D,D,D]);
   });
   return aoa;
 }
@@ -845,7 +846,7 @@ function refreshFormMode(){
 }
 function resetForm(){
   editingId=null;
-  ['rId','rName','rDept','rLoc','rGps','rHours'].forEach(id=>document.getElementById(id).value='');
+  ['rId','rName','rDept','rLoc','rGps','rHours','rHire'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rShift').value='固定班';
   refreshFormMode();
 }
@@ -859,13 +860,14 @@ function startEdit(id){
   document.getElementById('rGps').value=r.gps||'';
   document.getElementById('rShift').value=r.shift||'固定班';
   document.getElementById('rHours').value=r.hours||'';
+  document.getElementById('rHire').value=r.hire||'';
   refreshFormMode();
   document.getElementById('rName').focus();
 }
 async function saveEmployee(){
   const id=fval('rId'), name=fval('rName');
   if(!id||!name){ toast('請填員工編號與姓名'); return; }
-  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value,hours:fval('rHours')};
+  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value,hours:fval('rHours'),hire:fval('rHire')};
   if(editingId){
     const i=roster.findIndex(x=>x.id===editingId);
     if(i>=0) roster[i]=data;
@@ -900,7 +902,8 @@ function importRosterFile(f){
           loc:String(pickField(row,['打卡地點','地點','location','loc'])||'').trim(),
           gps:String(pickField(row,['gps','座標'])||'').trim(),
           shift:(String(pickField(row,['班別','shift'])||'').trim())||'固定班',
-          hours:String(pickField(row,['每日時數','時數','工時','hours'])||'').trim()
+          hours:String(pickField(row,['每日時數','時數','工時','hours'])||'').trim(),
+          hire:String(pickField(row,['到職日','到職','入職','hire'])||'').trim()
         });
       });
       if(!list.length){ toast('檔案裡找不到「員工編號 / 姓名」欄位'); return; }
