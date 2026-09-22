@@ -310,6 +310,10 @@
       <div class="field"><label class="f">每日上班時數（小時）</label><input id="rHours" type="number" min="0" step="0.5" placeholder="例如：8"></div>
       <div class="field"><label class="f">到職日</label><input id="rHire" type="date"></div>
     </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="field"><label class="f">休假日（填週幾，例：六日、三日；留白＝週末六日）</label><input id="rRest" placeholder="六日"></div>
+      <div class="field"></div>
+    </div>
     <div class="row-actions">
       <button class="btn primary" id="rAdd">加入名單</button>
       <button class="btn" id="rCancel" style="display:none">取消編輯</button>
@@ -658,6 +662,23 @@ function exportCsv(){
 /* ===== 昇億格式匯出：打卡紀錄（每人每天一列）＋ Log 紀錄（每次打卡一列）===== */
 function deptOf(empId){ const r=roster.find(x=>x.id===empId); return (r&&r.dept)||''; }
 function hireOf(empId){ const r=roster.find(x=>x.id===empId); return r&&r.hire?normDate(r.hire):'--'; }
+function hoursOf(id){ const r=roster.find(x=>x.id===id); return r&&r.hours?parseFloat(r.hours):0; }
+function weekdayOf(ds){ const [y,m,d]=ds.split('/').map(Number); return new Date(y,m-1,d).getDay(); }
+function restSetOf(id){
+  const r=roster.find(x=>x.id===id), str=(r&&r.rest)||'';
+  const map={'日':0,'天':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6};
+  const set=new Set();
+  for(const ch of str){ if(ch in map) set.add(map[ch]); }
+  if(!set.size){ set.add(0); set.add(6); }   // 預設週末
+  return set;
+}
+function dateCatFor(ds, rest){
+  const wd=weekdayOf(ds);
+  if(!rest.has(wd)) return '平日';
+  if(wd===6) return '休息日';
+  if(wd===0) return '例假日';
+  return '排班人員休假日';
+}
 
 // 打卡紀錄工作表（30 欄，上/下班併同一列；打卡地點分列於第 20、24 欄）
 const PIVOT_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
@@ -667,33 +688,41 @@ const PIVOT_HEADERS = ["員工編號","姓名","部門","打卡日期","日期�
   "延後下班原因","下班打卡方式","下班打卡地點","下班地點異常，不在範圍內的原因","下班打卡設備","下班打卡設備異常",
   "請假時間","請假時數","假別","加班時間","加班時數"];
 function buildPivotAOA(recs){
-  const D='--', map=new Map();
-  sortRecords(recs).forEach(r=>{
-    const k=r.empId+'|'+r.date;
-    let g=map.get(k);
-    if(!g){ g={empId:r.empId,name:r.name,date:r.date,shift:r.shift||'固定班',in:null,out:null}; map.set(k,g); }
-    if(r.shift) g.shift=r.shift;
-    if(r.cat==='上班'){ if(!g.in || r.time<g.in.time) g.in=r; }
-    else { if(!g.out || r.time>g.out.time) g.out=r; }
-  });
-  const groups=[...map.values()].sort((a,b)=> (a.empId+a.date)<(b.empId+b.date)?-1:1);
-  const DEV='mobile(Apple, iOS, Line)';
+  const D='--', DEV='mobile(Apple, iOS, Line)';
+  const list=sortRecords(recs);
   const aoa=[PIVOT_HEADERS];
-  groups.forEach(g=>{
-    const i=g.in, o=g.out;
-    const worked=(i&&o)?durationHMS(i.time,o.time):D;
-    aoa.push([
-      g.empId, g.name, deptOf(g.empId), g.date, RPT_DATECAT, RPT_SHIFT,
-      D, D, D, D, worked, D,
-      i?i.time:D, '', o?o.time:D, '', '', i?RPT_EARLY:D,
-      i?(i.method==='GPS'?'GPS/業務':(i.method||'手動')):D, i?(i.loc||D):D, '', i?DEV:D, D,
-      '', o?(o.method==='GPS'?'GPS/業務':(o.method||'手動')):D, o?(o.loc||D):D, '', o?DEV:D, D,
-      D, D, D, D, D
-    ]);
+  if(!list.length) return aoa;
+  const dts=list.map(r=>r.date).sort();
+  const [y0,m0]=dts[0].split('/').map(Number);
+  const [y1,m1]=dts[dts.length-1].split('/').map(Number);
+  const start=new Date(y0,m0-1,1), end=new Date(y1,m1,0);     // 1號到月底
+  const emps=[]; const seen=new Set();
+  list.forEach(r=>{ if(!seen.has(r.empId)){ seen.add(r.empId); emps.push({id:r.empId,name:r.name}); } });
+  const byKey=new Map();
+  list.forEach(r=>{ const k=r.empId+'|'+r.date; let g=byKey.get(k); if(!g){g={in:null,out:null};byKey.set(k,g);}
+    if(r.cat==='上班'){ if(!g.in||r.time<g.in.time) g.in=r; } else { if(!g.out||r.time>g.out.time) g.out=r; } });
+  emps.forEach(e=>{
+    const rest=restSetOf(e.id);
+    const workMin=Math.round((hoursOf(e.id)||8)*60);
+    for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+      const ds=fmtDate(d), cat=dateCatFor(ds,rest), isRest=rest.has(d.getDay());
+      const g=byKey.get(e.id+'|'+ds), i=g&&g.in, o=g&&g.out;
+      const worked=(i&&o)?durationHMS(i.time,o.time):D;
+      let anomaly=D;
+      if(!isRest && !i && !o) anomaly='曠職 '+workMin+' 分鐘';
+      else if(isRest && (i||o)) anomaly='非出勤日打卡，將以加班單為準';
+      aoa.push([
+        e.id, e.name, deptOf(e.id), ds, cat, RPT_SHIFT,
+        D, D, D, D, worked, D,
+        i?i.time:D, '', o?o.time:D, '', anomaly, i?RPT_EARLY:D,
+        i?(i.method==='GPS'?'GPS/業務':(i.method||'手動')):D, i?(i.loc||D):D, '', i?DEV:D, D,
+        '', o?(o.method==='GPS'?'GPS/業務':(o.method||'手動')):D, o?(o.loc||D):D, '', o?DEV:D, D,
+        D, D, D, D, D
+      ]);
+    }
   });
   return aoa;
 }
-
 // Log 紀錄工作表（17 欄，每次打卡一列）
 const LOG_HEADERS = ["員工編號","姓名","部門","打卡日期","日期類別","班別",
   "上班打卡時間","下班打卡時間","紀錄備註","提早上班原因",
@@ -705,7 +734,7 @@ function buildLogAOA(recs){
   sortRecords(recs).forEach(r=>{
     const isIn=r.cat==='上班', m=r.method==='GPS'?'GPS/業務':(r.method||'手動'), loc=r.loc||'';
     aoa.push([
-      r.empId, r.name, deptOf(r.empId), r.date, RPT_DATECAT, RPT_SHIFT,
+      r.empId, r.name, deptOf(r.empId), r.date, dateCatFor(r.date, restSetOf(r.empId)), RPT_SHIFT,
       isIn?r.time:D, isIn?D:r.time, '', isIn?RPT_EARLY:D,
       isIn?m:D, isIn?loc:D, '', isIn?DEV:D, D,
       '', isIn?D:m, isIn?D:loc, '', isIn?D:DEV, D
@@ -846,7 +875,7 @@ function refreshFormMode(){
 }
 function resetForm(){
   editingId=null;
-  ['rId','rName','rDept','rLoc','rGps','rHours','rHire'].forEach(id=>document.getElementById(id).value='');
+  ['rId','rName','rDept','rLoc','rGps','rHours','rHire','rRest'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rShift').value='固定班';
   refreshFormMode();
 }
@@ -861,13 +890,14 @@ function startEdit(id){
   document.getElementById('rShift').value=r.shift||'固定班';
   document.getElementById('rHours').value=r.hours||'';
   document.getElementById('rHire').value=r.hire||'';
+  document.getElementById('rRest').value=r.rest||'';
   refreshFormMode();
   document.getElementById('rName').focus();
 }
 async function saveEmployee(){
   const id=fval('rId'), name=fval('rName');
   if(!id||!name){ toast('請填員工編號與姓名'); return; }
-  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value,hours:fval('rHours'),hire:fval('rHire')};
+  const data={id,name,dept:fval('rDept'),loc:fval('rLoc'),gps:fval('rGps'),shift:document.getElementById('rShift').value,hours:fval('rHours'),hire:fval('rHire'),rest:fval('rRest')};
   if(editingId){
     const i=roster.findIndex(x=>x.id===editingId);
     if(i>=0) roster[i]=data;
@@ -903,7 +933,8 @@ function importRosterFile(f){
           gps:String(pickField(row,['gps','座標'])||'').trim(),
           shift:(String(pickField(row,['班別','shift'])||'').trim())||'固定班',
           hours:String(pickField(row,['每日時數','時數','工時','hours'])||'').trim(),
-          hire:String(pickField(row,['到職日','到職','入職','hire'])||'').trim()
+          hire:String(pickField(row,['到職日','到職','入職','hire'])||'').trim(),
+          rest:String(pickField(row,['休假日','休假','例假','rest'])||'').trim()
         });
       });
       if(!list.length){ toast('檔案裡找不到「員工編號 / 姓名」欄位'); return; }
